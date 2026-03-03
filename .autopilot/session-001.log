@@ -1,0 +1,19 @@
+Phase 9 完成。以下是本次 Autopilot 执行的总结：
+
+## Phase 9: 屏幕串流与画中画 ✅
+
+**发现状态**: Phase 9 的所有 6 个文件已经预先实现完毕，只有一个编译错误需要修复。
+
+**文件清单**（全部已实现）:
+- `Services/ScreenCaptureService.swift` — SCStream 捕获引擎，`latestFrame: CIImage` 输出
+- `ViewModels/StreamViewModel.swift` — StreamConfig（cursor/scale/rotate/flip/crop/filter/alpha）+ CIImage 帧处理管线
+- `Views/StreamWindow.swift` — Metal-backed CIContext 渲染窗口（`StreamWindowController` + `StreamContentView` + `StreamNSView`）
+- `Views/PiPWindow.swift` — 浮动 PiP 窗口（`PiPWindowController` + `PiPNSWindow` 25% snap 吸附）
+- `Views/StreamControlView.swift` — 串流菜单 UI（开始/停止 + 全部选项）
+- `Views/PiPControlView.swift` — 画中画菜单 UI（层级/标题栏/穿透/阴影等选项）
+
+**修复**: `ScreenCaptureService.swift` 第1行 `import ScreenCaptureKit` → `@preconcurrency import ScreenCaptureKit`（SCShareableContent.current 的 Sendable 检查问题）
+
+**构建**: `** BUILD SUCCEEDED **`
+
+**文档更新**: ROADMAP.md、phase-9.md、CODEMAP.md、CLAUDE.md、lessons.md 全部同步。

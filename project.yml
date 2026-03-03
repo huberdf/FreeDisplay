@@ -1,0 +1,26 @@
+name: FreeDisplay
+options:
+  bundleIdPrefix: com.freedisplay
+  deploymentTarget:
+    macOS: "14.0"
+
+targets:
+  FreeDisplay:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - FreeDisplay
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.freedisplay.app
+        INFOPLIST_KEY_LSUIElement: true
+        INFOPLIST_KEY_NSHumanReadableCopyright: "FreeDisplay - Free & Open Source"
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_ENTITLEMENTS: FreeDisplay/FreeDisplay.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: "-"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSScreenCaptureUsageDescription: "FreeDisplay 需要屏幕录制权限以显示各显示器的实时画面预览。"

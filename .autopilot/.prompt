@@ -1,0 +1,31 @@
+你现在处于 Autopilot 模式，在一个自动循环中被调用。项目目录：/Users/jm/Desktop/FreeDisplay
+
+请严格按以下步骤执行：
+
+1. 读取项目根目录的 CLAUDE.md，了解项目全貌和决策规则
+2. 如果存在 docs/BLOCKING.md，读取并按优先级处理阻塞问题（P0 > P1 > P2）
+3. 读取 docs/ROADMAP.md，找到下一个未完成的 Phase（第一个含 [ ] 的 Phase）
+4. 读取对应的 docs/roadmap/phase-N.md 获取详细实现提示
+5. 执行该 Phase 的所有任务：
+   - 每完成一个子任务，立即标记进度（见下方"进度标记规则"）
+   - 遵循 CLAUDE.md 中的验证链，每次改动后跑验证
+   - 遵循 CLAUDE.md 中的决策规则和联动规则
+6. 完成后更新文档：
+   - docs/BLOCKING.md 加/解决问题
+   - 踩坑经验 → docs/lessons.md
+   - 工作偏好 → docs/habits.md
+   - 改了文件 → docs/CODEMAP.md
+7. 直接结束，不要尝试执行多个 Phase
+
+⚠️ 进度标记规则（极其重要，必须严格遵守）：
+每完成一个子任务，必须同时更新两个文件：
+  a) docs/roadmap/phase-N.md — 对应任务标 [x]
+  b) docs/ROADMAP.md — 对应任务标 [x]
+两个文件都要改！autopilot 靠 docs/ROADMAP.md 追踪进度，不更新就会判定为"无进展"导致循环停止。
+Phase 全部任务完成后，还要把 Phase 标题的 ⏳ 改为 ✅。
+
+重要规则：
+- 遇到无法解决的问题，写入 docs/BLOCKING.md 后结束，不要死循环重试
+- 一次只做一个 Phase
+- 改完代码后必须跑验证链（见 CLAUDE.md）
+- 如果任务太大无法在一个 session 完成，做到哪标到哪，下个 session 会接上

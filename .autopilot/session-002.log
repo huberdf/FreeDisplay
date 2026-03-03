@@ -1,0 +1,11 @@
+**Phase 10 完成。** 总结：
+
+**完成的工作：**
+1. **`VirtualDisplayService.swift`** — 新服务，管理虚拟显示器配置（UserDefaults 持久化）、create/destroy/HiDPI 接口。由于 `CGVirtualDisplay` 是私有 SPI（不在公开 SDK 头文件中），实际创建方法返回 `false` 占位，等待用户决策。
+2. **`VirtualDisplayView.swift`** — 工具区管理 UI，列出已保存的虚拟显示器配置，支持创建（含分辨率预设/HiDPI/自动恢复选项）和删除。
+3. **`DisplayDetailView.swift`** — 为外接显示器新增 "高分辨率 (HiDPI)" 一键开关行（`HiDPIVirtualRowView`），调用 VirtualDisplayService。
+4. **`MenuBarView.swift`** — 工具区新增 "显示器和虚拟屏幕" 可展开入口，嵌入 VirtualDisplayView。
+5. **编译通过** ✅
+
+**新增阻塞问题：**
+- **BLOCKING.md B-002** — `CGVirtualDisplay` 是私有 SPI，需要用户决策是否允许使用私有 API（通过 bridging header 声明）。选项 A 允许后可实现完整虚拟显示器功能；选项 B 保持当前占位实现。

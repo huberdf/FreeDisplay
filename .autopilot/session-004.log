@@ -1,0 +1,25 @@
+Phase 12 前五项子任务全部完成，构建通过。以下是本次 session 的工作摘要：
+
+---
+
+## Phase 12 进度 — 5/9 子任务完成 ✅
+
+### 新增文件
+
+| 文件 | 内容 |
+|------|------|
+| `Services/SettingsService.swift` | UserDefaults 全局设置持久化（开机启动、组合亮度、DDC TTL、更新检查开关、颜色历史、per-display 亮度/对比度/收藏模式 + JSON 文件保存辅助方法） |
+| `Services/LaunchService.swift` | SMAppService 开机自启动（macOS 13+，register/unregister/toggle） |
+| `Services/UpdateService.swift` | GitHub Releases API 检查更新，版本号比较，hasUpdate 标志 |
+| `Views/VideoFilterWindow.swift` | 独立 NSWindow 视频滤镜预览（8 种 CIFilter：灰度/反色/模糊/锐化/色调/伽马/复古/暗角），含菜单入口 |
+| `Views/SystemColorView.swift` | NSColorSampler 屏幕取色，显示 HEX/RGB/HSB，颜色历史记录网格，含菜单入口 |
+
+### 修改文件
+
+- `MenuBarView.swift` — 集成所有新工具入口 + 设置区（启动/亮度/更新开关）+ 版本号展示 + 更新提示 + ScrollView（支持内容超长）
+
+### 剩余任务（下个 session 继续）
+- UI 打磨与一致性
+- 性能优化（DDC 缓存、串流 buffer 池）
+- 构建可分发 .app / .dmg
+- 触发 refactor-context

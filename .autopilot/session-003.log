@@ -1,0 +1,24 @@
+Phase 11 完成。以下是本次 session 的工作总结：
+
+## Phase 11 完成 ✅
+
+**新增文件（5个）：**
+
+| 文件 | 内容 |
+|------|------|
+| `Services/ConfigProtectionService.swift` | `DisplayConfig`/`NamedSnapshot`/`ProtectedItems` 数据模型；快照保存到 `~/Library/Application Support/FreeDisplay/configs/`；`CGDisplayRegisterReconfigurationCallback` 监听变化后自动恢复 |
+| `Services/AutoBrightnessService.swift` | IOKit `AppleLMUController` 读取环境光 lux；对数映射 lux→brightness；2s 轮询 Task；通过 `DisplayManagerAccessor.shared` 访问所有 displays |
+| `Views/ConfigProtectionView.swift` | 10 项保护 Toggle（分辨率/刷新率/色彩模式/旋转等）；"启用全部/禁用全部"；快照保存/恢复/删除 Sheet |
+| `Views/AutoBrightnessView.swift` | Toggle 开关 + 灵敏度滑块（低/中/高）+ 当前 lux 显示 |
+
+**修改文件（3个）：**
+- `DisplayDetailView.swift` — 新增"配置保护"可展开 section
+- `MenuBarView.swift` — 工具区新增"自动亮度"可展开 section
+- `DisplayManager.swift` — `refreshDisplays()` 同步更新 `DisplayManagerAccessor.shared.displays`
+
+**编译**：`BUILD SUCCEEDED`
+
+**踩坑记录：**
+- `IOConnectCallMethod` struct 大小参数是 `Int` 不能传 `nil`
+- `@MainActor` class 的 init 访问其他 `@MainActor` 属性需标记 `@MainActor`
+- 新增文件后必须 `xcodegen generate`

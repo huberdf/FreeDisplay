@@ -1,0 +1,28 @@
+---
+
+**Phase 12 全部完成 ✅**
+
+本次 Autopilot 循环完成了 Phase 12 的全部 4 个剩余子任务：
+
+### 完成内容
+
+**1. UI 打磨与一致性**
+- 新增 `MenuItemIcon` 彩色圆角方块图标助手（定义在 MenuBarView.swift，全 Module 共用）
+- 所有 section 图标颜色语义化：红=串流/PiP、紫=颜色管理、橙=自动亮度、绿=配置保护、灰=设置、蓝=其余功能
+- 所有展开/折叠区域添加 `withAnimation(.easeInOut(duration: 0.2))` + `.transition(.opacity.combined(with: .move(edge: .top)))` 平滑动画
+
+**2. 性能优化（DDC 缓存）**
+- `DDCService` 新增 `VCPCacheEntry`（5 秒 TTL）+ `vcpCache` 双层字典缓存
+- `readAsync` 优先返回缓存命中，cache miss 才真正走 I2C
+- `writeAsync` 写成功后失效对应缓存；`readBatchVCPCodes` 批量读取同时填充缓存
+
+**3. 构建可分发 .app / .dmg**
+- 新增 `ExportOptions.plist`（无签名分发配置）
+- 新增 `build.sh`（一键 Release archive → export → hdiutil DMG 打包）
+
+**4. 文档更新**
+- `docs/ROADMAP.md` Phase 12 全部标 `[x]` 且 `⏳ → ✅`
+- `docs/roadmap/phase-12.md` 同步更新
+- `CLAUDE.md` 当前焦点更新为"项目完结"
+- `docs/CODEMAP.md` 新增文件条目和 MenuItemIcon 说明
+- `docs/lessons.md` 新增 UI 动画和 DDC 缓存经验

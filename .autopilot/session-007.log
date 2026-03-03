@@ -1,0 +1,27 @@
+项目状态检查完毕。
+
+## 当前状态
+
+**ROADMAP.md**: 全部 Phase 0–12 已完成（所有任务均标记 `[x]` + `✅`），无任何未完成任务。
+
+**BLOCKING.md**: 存在一个 P1 阻塞问题需要用户决策：
+
+---
+
+### B-002: CGVirtualDisplay 私有 API — 等待决策
+
+Phase 10 的虚拟显示器功能目前使用占位实现（返回 `false`）。要真正创建/销毁虚拟显示器，需要决定：
+
+**选项 A（允许使用私有 API）**:
+- 添加 `FreeDisplay-Bridging-Header.h`，声明 `CGVirtualDisplay` 私有接口
+- 在 `project.yml` 设置 `SWIFT_OBJC_BRIDGING_HEADER`
+- 实现完整的虚拟显示器创建/销毁功能
+- 风险：依赖私有 API，macOS 版本升级可能失效
+
+**选项 B（跳过，保持占位）**:
+- 维持现状，Phase 10 虚拟显示器创建标记为"不支持"
+- 只保留 UI 架构和 HiDPI plist 方案（Phase 3 已实现）
+
+---
+
+**Autopilot 暂停**：项目 ROADMAP 已全部完成，无后续 Phase 可执行。请告知是否需要实现 B-002（选 A 还是 B），或是否有新需求。
