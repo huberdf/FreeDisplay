@@ -3,24 +3,26 @@ import IOKit
 import IOKit.graphics
 import CoreGraphics
 
-/// Unified brightness service.
-/// - Internal display: uses IODisplayGetFloatParameter / IODisplaySetFloatParameter
-/// - External display: uses DDCService VCP 0x10
 final class BrightnessService: @unchecked Sendable {
     static let shared = BrightnessService()
     private init() {}
 
+    private let queue = DispatchQueue(label: "com.freedisplay.brightness", qos: .userInitiated)
+
     // MARK: - Public API
 
-    /// Reads brightness asynchronously and updates display.brightness on MainActor.
-    /// Must be called from a @MainActor context (or within a Task @MainActor).
     @MainActor
-    func refreshBrightness(for display: DisplayInfo) {
-        let isBuiltin  = display.isBuiltin
-        let displayID  = display.displayID
+    func refreshBrightness(for display: DisplayInfo) async {
+        let isBuiltin = display.isBuiltin
+        let displayID = display.displayID
 
         if isBuiltin {
-            if let b = getInternalBrightness() {
+            let brightness = await withCheckedContinuation { continuation in
+                queue.async {
+                    continuation.resume(returning: self.getInternalBrightness())
+                }
+            }
+            if let b = brightness {
                 display.brightness = b
             }
         } else {
@@ -35,16 +37,20 @@ final class BrightnessService: @unchecked Sendable {
         }
     }
 
-    /// Sets brightness. Internal display is set synchronously; external uses async DDC.
-    /// Must be called from a @MainActor context.
     @MainActor
-    func setBrightness(_ brightness: Double, for display: DisplayInfo) {
-        let clamped   = max(0.0, min(100.0, brightness))
+    func setBrightness(_ brightness: Double, for display: DisplayInfo) async {
+        let clamped = max(0.0, min(100.0, brightness))
         let isBuiltin = display.isBuiltin
         let displayID = display.displayID
 
         if isBuiltin {
-            setInternalBrightness(Float(clamped / 100.0))
+            let value = Float(clamped / 100.0)
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                queue.async {
+                    self.setInternalBrightness(value)
+                    continuation.resume()
+                }
+            }
         } else {
             DDCService.shared.writeAsync(
                 displayID: displayID,

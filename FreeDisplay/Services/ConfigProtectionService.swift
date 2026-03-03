@@ -238,7 +238,9 @@ final class ConfigProtectionService: ObservableObject, @unchecked Sendable {
                 $0.width == config.width && $0.height == config.height &&
                 (items.refreshRate ? abs($0.refreshRate - config.refreshRate) < 0.5 : true)
             }) {
-                ResolutionService.shared.setDisplayMode(mode, for: display.displayID)
+                Task { @MainActor in
+                    await ResolutionService.shared.setDisplayMode(mode, for: display.displayID)
+                }
             }
         }
 
@@ -260,7 +262,9 @@ final class ConfigProtectionService: ObservableObject, @unchecked Sendable {
                 $0.width == config.width && $0.height == config.height &&
                 (items.refreshRate ? abs($0.refreshRate - config.refreshRate) < 0.5 : true)
             }) {
-                ResolutionService.shared.setDisplayMode(mode, for: config.displayID)
+                Task { @MainActor in
+                    await ResolutionService.shared.setDisplayMode(mode, for: config.displayID)
+                }
             }
         }
 

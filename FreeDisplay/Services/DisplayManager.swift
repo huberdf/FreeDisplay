@@ -48,9 +48,9 @@ class DisplayManager: ObservableObject {
         displays = newDisplays
         DisplayManagerAccessor.shared.displays = newDisplays
 
-        // Async-initialize brightness from hardware (DDC / IODisplay)
         for display in newDisplays {
-            BrightnessService.shared.refreshBrightness(for: display)
+            Task { await BrightnessService.shared.refreshBrightness(for: display) }
+            Task { await display.loadDetails() }
         }
     }
 

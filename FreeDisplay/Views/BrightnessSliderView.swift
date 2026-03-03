@@ -1,11 +1,9 @@
 import SwiftUI
 
-/// Brightness slider for a single display. Shows sun icons + percentage.
-/// Debounces DDC writes to avoid flooding I2C bus.
 struct BrightnessSliderView: View {
     @ObservedObject var display: DisplayInfo
     @State private var localBrightness: Double = 50
-    @State private var debounceTask: DispatchWorkItem?
+    @State private var isDragging: Bool = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -14,10 +12,15 @@ struct BrightnessSliderView: View {
                 .foregroundColor(.secondary)
                 .frame(width: 14)
 
-            Slider(value: $localBrightness, in: 0...100, step: 1)
-                .onChange(of: localBrightness) { newValue in
-                    scheduleApply(newValue)
+            Slider(value: $localBrightness, in: 0...100, step: 1) { editing in
+                isDragging = editing
+                if !editing {
+                    Task { @MainActor in
+                        display.brightness = localBrightness
+                        await BrightnessService.shared.setBrightness(localBrightness, for: display)
+                    }
                 }
+            }
 
             Image(systemName: "sun.max")
                 .font(.caption)
@@ -36,31 +39,17 @@ struct BrightnessSliderView: View {
             localBrightness = display.brightness
         }
         .onChange(of: display.brightness) { newValue in
-            // Sync local state if brightness was changed externally
-            if abs(newValue - localBrightness) > 1 {
+            if !isDragging && abs(newValue - localBrightness) > 1 {
                 localBrightness = newValue
             }
         }
     }
-
-    private func scheduleApply(_ value: Double) {
-        debounceTask?.cancel()
-        let task = DispatchWorkItem { [value] in
-            Task { @MainActor in
-                display.brightness = value
-                BrightnessService.shared.setBrightness(value, for: display)
-            }
-        }
-        debounceTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: task)
-    }
 }
 
-/// Combined brightness slider controlling all provided displays simultaneously.
 struct CombinedBrightnessView: View {
     let displays: [DisplayInfo]
     @State private var combinedBrightness: Double = 50
-    @State private var debounceTask: DispatchWorkItem?
+    @State private var isDragging: Bool = false
 
     private var averageBrightness: Double {
         guard !displays.isEmpty else { return 50 }
@@ -89,10 +78,17 @@ struct CombinedBrightnessView: View {
                     .foregroundColor(.secondary)
                     .frame(width: 14)
 
-                Slider(value: $combinedBrightness, in: 0...100, step: 1)
-                    .onChange(of: combinedBrightness) { newValue in
-                        scheduleApplyAll(newValue)
+                Slider(value: $combinedBrightness, in: 0...100, step: 1) { editing in
+                    isDragging = editing
+                    if !editing {
+                        Task { @MainActor in
+                            for display in displays {
+                                display.brightness = combinedBrightness
+                                await BrightnessService.shared.setBrightness(combinedBrightness, for: display)
+                            }
+                        }
                     }
+                }
 
                 Image(systemName: "sun.max")
                     .font(.caption2)
@@ -105,19 +101,5 @@ struct CombinedBrightnessView: View {
         .onAppear {
             combinedBrightness = averageBrightness
         }
-    }
-
-    private func scheduleApplyAll(_ value: Double) {
-        debounceTask?.cancel()
-        let task = DispatchWorkItem { [value] in
-            Task { @MainActor in
-                for display in displays {
-                    display.brightness = value
-                    BrightnessService.shared.setBrightness(value, for: display)
-                }
-            }
-        }
-        debounceTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: task)
     }
 }

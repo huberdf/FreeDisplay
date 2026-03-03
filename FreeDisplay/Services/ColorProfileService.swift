@@ -30,39 +30,41 @@ final class ColorProfileService: @unchecked Sendable {
     // MARK: - Profile Enumeration
 
     /// Returns all installed ICC profiles sorted alphabetically.
-    func enumerateProfiles() -> [ICCProfile] {
-        var profiles: [ICCProfile] = []
-        let searchURLs: [URL] = [
-            URL(fileURLWithPath: "/Library/ColorSync/Profiles"),
-            URL(fileURLWithPath: "/System/Library/ColorSync/Profiles"),
-            URL(fileURLWithPath: NSHomeDirectory())
-                .appendingPathComponent("Library/ColorSync/Profiles")
-        ]
+    func enumerateProfiles() async -> [ICCProfile] {
+        await Task.detached(priority: .userInitiated) {
+            var profiles: [ICCProfile] = []
+            let searchURLs: [URL] = [
+                URL(fileURLWithPath: "/Library/ColorSync/Profiles"),
+                URL(fileURLWithPath: "/System/Library/ColorSync/Profiles"),
+                URL(fileURLWithPath: NSHomeDirectory())
+                    .appendingPathComponent("Library/ColorSync/Profiles")
+            ]
 
-        var seenPaths = Set<URL>()
-        let fm = FileManager.default
+            var seenPaths = Set<URL>()
+            let fm = FileManager.default
 
-        for dir in searchURLs {
-            guard let enumerator = fm.enumerator(
-                at: dir,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
+            for dir in searchURLs {
+                guard let enumerator = fm.enumerator(
+                    at: dir,
+                    includingPropertiesForKeys: [.isRegularFileKey],
+                    options: [.skipsHiddenFiles]
+                ) else { continue }
 
-            for case let url as URL in enumerator {
-                guard !seenPaths.contains(url) else { continue }
-                let ext = url.pathExtension.lowercased()
-                guard ext == "icc" || ext == "icm" else { continue }
-                seenPaths.insert(url)
-                if let profile = makeProfile(from: url) {
-                    profiles.append(profile)
+                for case let url as URL in enumerator {
+                    guard !seenPaths.contains(url) else { continue }
+                    let ext = url.pathExtension.lowercased()
+                    guard ext == "icc" || ext == "icm" else { continue }
+                    seenPaths.insert(url)
+                    if let profile = Self.makeProfileStatic(from: url) {
+                        profiles.append(profile)
+                    }
                 }
             }
-        }
 
-        return profiles.sorted {
-            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
+            return profiles.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        }.value
     }
 
     private func makeProfile(from url: URL) -> ICCProfile? {

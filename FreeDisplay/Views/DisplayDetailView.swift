@@ -15,6 +15,8 @@ struct DisplayDetailView: View {
     @State private var showPiP: Bool = false
     @State private var showHiDPIVirtual: Bool = false
     @State private var showConfigProtection: Bool = false
+    @State private var colorSpaceName: String = ""
+    @State private var colorModeDesc: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -96,7 +98,7 @@ struct DisplayDetailView: View {
                 Text("颜色描述文件")
                     .font(.body)
                 Spacer()
-                Text(ColorProfileService.shared.currentColorSpaceName(for: display.displayID))
+                Text(colorSpaceName)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -122,7 +124,7 @@ struct DisplayDetailView: View {
                 Text("色彩模式")
                     .font(.body)
                 Spacer()
-                Text(ColorProfileService.shared.colorModeDescription(for: display.displayID))
+                Text(colorModeDesc)
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Image(systemName: showColorMode ? "chevron.down" : "chevron.right")

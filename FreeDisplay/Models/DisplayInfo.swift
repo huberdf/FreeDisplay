@@ -35,8 +35,8 @@ class DisplayInfo: ObservableObject, Identifiable {
         self.pixelWidth = CGDisplayPixelsWide(displayID)
         self.pixelHeight = CGDisplayPixelsHigh(displayID)
         self.rotation = CGDisplayRotation(displayID)
-        self.brightness = 50.0  // Updated async by BrightnessService.refreshBrightness
-        self.availableModes = DisplayMode.availableModes(for: displayID)
+        self.brightness = 50.0
+        self.availableModes = []
         self.currentDisplayMode = DisplayMode.currentMode(for: displayID)
         let vendor = CGDisplayVendorNumber(displayID)
         let model = CGDisplayModelNumber(displayID)
@@ -44,15 +44,38 @@ class DisplayInfo: ObservableObject, Identifiable {
         self.modelNumber = model
         self.serialNumber = CGDisplaySerialNumber(displayID)
 
-        // Resolve real display name using local variables (self cannot be used fully until all properties are initialized)
         if builtin {
             self.name = "内建显示屏"
         } else {
-            self.name = DisplayInfo.lookupDisplayName(vendor: vendor, model: model) ?? "Display \(displayID)"
+            self.name = "Display \(displayID)"
         }
     }
 
-    /// Look up the product name for an external display using IOKit.
+    func loadDetails() async {
+        let vendor = vendorNumber
+        let model = modelNumber
+        let builtin = isBuiltin
+        let displayID = self.displayID
+
+        let modes = await Task.detached(priority: .userInitiated) {
+            DisplayMode.availableModes(for: displayID)
+        }.value
+
+        let resolvedName: String?
+        if !builtin {
+            resolvedName = await Task.detached(priority: .userInitiated) {
+                DisplayInfo.lookupDisplayName(vendor: vendor, model: model)
+            }.value
+        } else {
+            resolvedName = nil
+        }
+
+        self.availableModes = modes
+        if let resolved = resolvedName {
+            self.name = resolved
+        }
+    }
+
     private static func lookupDisplayName(vendor: UInt32, model: UInt32) -> String? {
         var iterator: io_iterator_t = 0
         let matching = IOServiceMatching("IODisplayConnect")
@@ -73,7 +96,6 @@ class DisplayInfo: ObservableObject, Identifiable {
             }
             let dict = cfDict as NSDictionary
 
-            // Match by vendor and model
             let serviceVendor: UInt32
             let serviceModel: UInt32
 
@@ -97,7 +119,6 @@ class DisplayInfo: ObservableObject, Identifiable {
                 continue
             }
 
-            // Extract the product name from the locale->name dictionary
             if let productNames = dict["DisplayProductName"] as? [String: String],
                let firstName = productNames.values.first {
                 return firstName
