@@ -5,46 +5,55 @@ import SwiftUI
 struct MainDisplayView: View {
     @ObservedObject var display: DisplayInfo
     @EnvironmentObject var displayManager: DisplayManager
+    @State private var errorMessage: String?
+    @State private var isHovered = false
 
     var body: some View {
-        if display.isMain {
-            HStack {
-                Image(systemName: "m.circle.fill")
-                    .foregroundColor(.blue)
-                    .frame(width: 20)
-                Text("当前主显示屏")
-                    .font(.body)
-                Spacer()
-                Text("主")
-                    .font(.caption2)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color.blue)
-                    .cornerRadius(3)
+        VStack(alignment: .leading, spacing: 0) {
+            if display.isMain {
+                HStack {
+                    MenuItemIcon(systemName: "m.circle.fill", color: .blue)
+                    Text("当前主显示屏")
+                        .font(.body)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+            } else {
+                HStack {
+                    MenuItemIcon(systemName: "m.circle.fill", color: .blue)
+                    Text("设为主显示屏")
+                        .font(.body)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Color.primary.opacity(isHovered ? 0.06 : 0))
+                .onHover { isHovered = $0 }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    Task { @MainActor in
+                        let success = await ArrangementService.shared.setAsMainDisplay(
+                            display.displayID,
+                            among: displayManager.displays
+                        )
+                        if !success {
+                            errorMessage = "设置主显示屏失败"
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                                errorMessage = nil
+                            }
+                        }
+                    }
+                }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-        } else {
-            HStack {
-                Image(systemName: "m.circle.fill")
-                    .foregroundColor(.blue)
-                    .frame(width: 20)
-                Text("设为主显示屏")
-                    .font(.body)
-                Spacer()
-                Image(systemName: "arrow.right.circle")
+
+            if let msg = errorMessage {
+                Text(msg)
                     .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                ArrangementService.shared.setAsMainDisplay(
-                    display.displayID,
-                    among: displayManager.displays
-                )
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
             }
         }
     }

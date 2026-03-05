@@ -16,21 +16,73 @@ struct MenuItemIcon: View {
     }
 }
 
+// MARK: - ExpandableRow
+
+struct ExpandableRow: View {
+    let icon: String
+    var iconColor: Color = .blue
+    let label: String
+    var subtitle: String? = nil
+    @Binding var isExpanded: Bool
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack {
+            MenuItemIcon(systemName: icon, color: iconColor)
+            Text(label).font(.body)
+            Spacer()
+            if let sub = subtitle, !sub.isEmpty {
+                Text(sub)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .animation(.easeInOut(duration: 0.2), value: isExpanded)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Color.primary.opacity(isHovered ? 0.06 : 0))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                isExpanded.toggle()
+            }
+        }
+        .onHover { isHovered = $0 }
+        .accessibilityLabel(isExpanded ? "\(label)，已展开" : "\(label)，已折叠")
+        .accessibilityHint("点击展开或折叠此部分")
+        .accessibilityAddTraits(.isButton)
+        .help("点击展开或折叠此部分")
+    }
+}
+
 struct MenuBarView: View {
     @EnvironmentObject var displayManager: DisplayManager
-    @StateObject private var updateService = UpdateService.shared
-    @StateObject private var settings = SettingsService.shared
+    @ObservedObject private var updateService = UpdateService.shared
+    @ObservedObject private var settings = SettingsService.shared
+    @ObservedObject private var virtualDisplayService = VirtualDisplayService.shared
     @State private var expandedDisplayIDs: Set<CGDirectDisplayID> = []
     @State private var showArrangement: Bool = false
     @State private var showVirtualDisplays: Bool = false
     @State private var showAutoBrightness: Bool = false
     @State private var showSettings: Bool = false
+    @State private var quitHovered = false
+
+    private var visibleDisplays: [DisplayInfo] {
+        displayManager.displays.filter { !virtualDisplayService.isVirtualDisplay($0.displayID) }
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 // 显示器列表
-                ForEach(displayManager.displays) { display in
+                ForEach(visibleDisplays) { display in
                     VStack(spacing: 0) {
                         DisplayRowView(
                             display: display,
@@ -50,25 +102,25 @@ struct MenuBarView: View {
                     }
                 }
 
+                // 预设列表 (Phase 19)
+                Divider()
+                    .opacity(0.3)
+                    .padding(.vertical, 2)
+
+                PresetListView()
+
                 // 排列显示器 section (Phase 4)
-                if displayManager.displays.count > 1 {
+                if visibleDisplays.count > 1 {
                     Divider()
+                        .opacity(0.3)
                         .padding(.vertical, 2)
 
-                    HStack {
-                        MenuItemIcon(systemName: "rectangle.3.offgrid")
-                        Text("排列显示器")
-                            .font(.body)
-                        Spacer()
-                        Image(systemName: showArrangement ? "chevron.down" : "chevron.right")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .animation(.easeInOut(duration: 0.18), value: showArrangement)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .contentShape(Rectangle())
-                    .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { showArrangement.toggle() } }
+                    ExpandableRow(
+                        icon: "rectangle.3.offgrid",
+                        iconColor: .blue,
+                        label: "排列显示器",
+                        isExpanded: $showArrangement
+                    )
 
                     if showArrangement {
                         ArrangementView()
@@ -78,43 +130,33 @@ struct MenuBarView: View {
                 }
 
                 Divider()
+                    .opacity(0.3)
                     .padding(.vertical, 2)
 
                 // 组合亮度控制（Phase 2）
                 if settings.showCombinedBrightness {
                     CombinedBrightnessView(displays: displayManager.displays)
                     Divider()
+                        .opacity(0.3)
                         .padding(.vertical, 2)
                 }
 
                 // 工具区标题
-                HStack {
-                    Image(systemName: "ellipsis.circle.fill")
-                        .foregroundColor(.secondary)
-                    Text("工具")
-                        .font(.footnote)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 6)
-                .padding(.bottom, 2)
+                Text("工具")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 2)
 
                 // 虚拟显示器工具入口 (Phase 10)
-                HStack {
-                    MenuItemIcon(systemName: "display.2")
-                    Text("显示器和虚拟屏幕")
-                        .font(.body)
-                    Spacer()
-                    Image(systemName: showVirtualDisplays ? "chevron.down" : "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .animation(.easeInOut(duration: 0.18), value: showVirtualDisplays)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { showVirtualDisplays.toggle() } }
+                ExpandableRow(
+                    icon: "display.2",
+                    iconColor: .blue,
+                    label: "虚拟显示器",
+                    isExpanded: $showVirtualDisplays
+                )
 
                 if showVirtualDisplays {
                     VirtualDisplayView()
@@ -123,20 +165,12 @@ struct MenuBarView: View {
                 }
 
                 // 自动亮度入口 (Phase 11)
-                HStack {
-                    MenuItemIcon(systemName: "sun.and.horizon.fill", color: .orange)
-                    Text("自动亮度")
-                        .font(.body)
-                    Spacer()
-                    Image(systemName: showAutoBrightness ? "chevron.down" : "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .animation(.easeInOut(duration: 0.18), value: showAutoBrightness)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { showAutoBrightness.toggle() } }
+                ExpandableRow(
+                    icon: "sun.and.horizon.fill",
+                    iconColor: .orange,
+                    label: "自动亮度",
+                    isExpanded: $showAutoBrightness
+                )
 
                 if showAutoBrightness {
                     AutoBrightnessView()
@@ -144,30 +178,17 @@ struct MenuBarView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
-                // 视频滤镜入口 (Phase 12)
-                VideoFilterMenuEntry()
-
-                // 系统颜色取色器入口 (Phase 12)
-                SystemColorMenuEntry()
-
                 Divider()
+                    .opacity(0.3)
                     .padding(.vertical, 2)
 
                 // 设置区 (Phase 12)
-                HStack {
-                    MenuItemIcon(systemName: "gearshape.fill", color: .gray)
-                    Text("设置")
-                        .font(.body)
-                    Spacer()
-                    Image(systemName: showSettings ? "chevron.down" : "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .animation(.easeInOut(duration: 0.18), value: showSettings)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { showSettings.toggle() } }
+                ExpandableRow(
+                    icon: "gearshape.fill",
+                    iconColor: .gray,
+                    label: "设置",
+                    isExpanded: $showSettings
+                )
 
                 if showSettings {
                     SettingsView()
@@ -176,6 +197,7 @@ struct MenuBarView: View {
                 }
 
                 Divider()
+                    .opacity(0.3)
                     .padding(.vertical, 2)
 
                 // 更新提示 (Phase 12)
@@ -184,6 +206,7 @@ struct MenuBarView: View {
                         Image(systemName: "arrow.down.circle.fill")
                             .foregroundColor(.green)
                             .frame(width: 20)
+                            .accessibilityHidden(true)
                         Text("新版本 v\(ver) 可用")
                             .font(.caption)
                             .foregroundColor(.green)
@@ -192,15 +215,20 @@ struct MenuBarView: View {
                             .buttonStyle(.plain)
                             .font(.caption)
                             .foregroundColor(.blue)
+                            .help("下载并安装最新版本")
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
+                    .background(Color.green.opacity(0.08))
+                    .cornerRadius(6)
+                    .padding(.horizontal, 8)
                 }
 
                 // 版本号与退出
                 HStack {
                     Text("FreeDisplay v\(updateService.currentVersion)")
-                        .font(.caption2)
+                        .font(.caption)
+                        .fontWeight(.medium)
                         .foregroundColor(.secondary)
                     Spacer()
                     Button(action: {
@@ -208,20 +236,27 @@ struct MenuBarView: View {
                     }) {
                         HStack(spacing: 3) {
                             Image(systemName: "xmark")
+                                .accessibilityHidden(true)
                             Text("退出")
                         }
                         .font(.caption)
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(quitHovered ? .red : .secondary)
+                    .onHover { quitHovered = $0 }
+                    .help("退出 FreeDisplay")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
-        .frame(width: 320)
-        .frame(maxHeight: 620)
+        .frame(width: 340)
+        .frame(maxHeight: 700)
         .padding(.vertical, 8)
+        .onReceive(displayManager.$displays) { newDisplays in
+            let validIDs = Set(newDisplays.map { $0.displayID })
+            expandedDisplayIDs = expandedDisplayIDs.intersection(validIDs)
+        }
         .task {
             if settings.checkUpdatesOnLaunch {
                 await updateService.checkForUpdates()
@@ -233,7 +268,7 @@ struct MenuBarView: View {
 // MARK: - SettingsView (Phase 12: embedded in MenuBarView)
 
 struct SettingsView: View {
-    @StateObject private var settings = SettingsService.shared
+    @ObservedObject private var settings = SettingsService.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -250,9 +285,8 @@ struct SettingsView: View {
                 }
             )) {
                 HStack(spacing: 6) {
-                    Image(systemName: "power")
-                        .foregroundColor(.green)
-                        .frame(width: 16)
+                    MenuItemIcon(systemName: "power", color: .green)
+                        .accessibilityHidden(true)
                     Text("开机自动启动")
                         .font(.body)
                 }
@@ -260,13 +294,38 @@ struct SettingsView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .padding(.horizontal, 12)
+            .help("登录时自动启动 FreeDisplay")
+
+            // 首次启动提示：建议开启开机自启
+            if !settings.launchAtLoginPrompted {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.secondary)
+                        .frame(width: 16)
+                        .accessibilityHidden(true)
+                    Text("建议开启开机自动启动")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button("知道了") {
+                        settings.launchAtLoginPrompted = true
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 2)
+                .onAppear {
+                    // Mark as prompted so it only shows once
+                    // User dismisses manually via "知道了" button
+                }
+            }
 
             // 显示组合亮度
             Toggle(isOn: $settings.showCombinedBrightness) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sun.min.fill")
-                        .foregroundColor(.yellow)
-                        .frame(width: 16)
+                    MenuItemIcon(systemName: "sun.min.fill", color: .yellow)
+                        .accessibilityHidden(true)
                     Text("显示组合亮度控制")
                         .font(.body)
                 }
@@ -274,13 +333,13 @@ struct SettingsView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .padding(.horizontal, 12)
+            .help("在菜单栏显示所有显示器的统一亮度滑块")
 
             // 启动时检查更新
             Toggle(isOn: $settings.checkUpdatesOnLaunch) {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.clockwise.circle")
-                        .foregroundColor(.blue)
-                        .frame(width: 16)
+                    MenuItemIcon(systemName: "arrow.clockwise.circle", color: .blue)
+                        .accessibilityHidden(true)
                     Text("启动时检查更新")
                         .font(.body)
                 }
@@ -288,6 +347,7 @@ struct SettingsView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .padding(.horizontal, 12)
+            .help("每次启动时自动检查是否有新版本可用")
         }
         .padding(.vertical, 6)
     }
@@ -298,45 +358,74 @@ struct SettingsView: View {
 struct DisplayRowView: View {
     @ObservedObject var display: DisplayInfo
     @EnvironmentObject var displayManager: DisplayManager
+    @State private var isHovered: Bool = false
 
     let isExpanded: Bool
     let onToggleExpand: () -> Void
 
     var body: some View {
-        HStack {
-            // Expand/collapse arrow button
-            Button(action: onToggleExpand) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+        HStack(spacing: 0) {
+            HStack {
+                Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .frame(width: 16)
-            }
-            .buttonStyle(.plain)
+                    .rotationEffect(Angle(degrees: isExpanded ? 90 : 0))
+                    .animation(.easeInOut(duration: 0.2), value: isExpanded)
+                    .accessibilityHidden(true)
 
-            Image(systemName: display.isBuiltin ? "laptopcomputer" : "display")
-                .foregroundColor(.blue)
-            Text(display.name)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            if display.isMain {
-                Text("主")
-                    .font(.caption2)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(Color.blue)
-                    .cornerRadius(3)
+                MenuItemIcon(systemName: display.isBuiltin ? "laptopcomputer" : "display", color: .blue)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(display.name)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let mode = display.currentDisplayMode {
+                        Text(mode.resolutionString)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                if display.isMain {
+                    Text("主屏")
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.blue.opacity(0.12))
+                        .cornerRadius(3)
+                }
+                Spacer()
             }
-            Spacer()
-            Toggle("", isOn: Binding(
-                get: { display.isEnabled },
-                set: { _ in displayManager.toggleDisplay(display) }
-            ))
-            .toggleStyle(.switch)
-            .labelsHidden()
-            .controlSize(.small)
+            .contentShape(Rectangle())
+            .onTapGesture { onToggleExpand() }
+            .help("展开显示器控制面板")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .background(Color.primary.opacity(isHovered ? 0.06 : 0))
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            Button {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.Displays-Settings") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Label("在系统设置中打开", systemImage: "display")
+            }
+
+            Divider()
+
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(display.name, forType: .string)
+            } label: {
+                Label("复制显示器名称", systemImage: "doc.on.doc")
+            }
+        }
+        .accessibilityLabel("显示器：\(display.name)\(display.isMain ? "，主显示器" : "")\(isExpanded ? "，已展开" : "，已折叠")")
+        .accessibilityHint("点击展开控制面板")
+        .accessibilityAddTraits(.isButton)
     }
 }

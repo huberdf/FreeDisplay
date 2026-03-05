@@ -6,6 +6,9 @@ import CoreGraphics
 struct VirtualDisplayView: View {
     @StateObject private var service = VirtualDisplayService.shared
     @State private var showCreateForm = false
+    @State private var configToDelete: UUID?
+    @State private var isCreating: Bool = false
+    @State private var createError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -18,6 +21,8 @@ struct VirtualDisplayView: View {
             } else {
                 ForEach(service.configs) { config in
                     configRow(config: config)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
                 }
             }
 
@@ -25,7 +30,7 @@ struct VirtualDisplayView: View {
             Button(action: { showCreateForm.toggle() }) {
                 HStack {
                     Image(systemName: showCreateForm ? "minus.circle.fill" : "plus.circle.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.accentColor)
                     Text(showCreateForm ? "取消" : "创建虚拟显示器")
                         .font(.body)
                 }
@@ -34,14 +39,56 @@ struct VirtualDisplayView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
+            .help("创建新的虚拟显示器")
+
+            if let err = createError {
+                Text(err)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
 
             if showCreateForm {
-                CreateVirtualDisplayForm(onConfirm: { config in
-                    service.addAndCreate(config)
-                    showCreateForm = false
+                CreateVirtualDisplayForm(isCreating: $isCreating, onConfirm: { config in
+                    isCreating = true
+                    createError = nil
+                    Task { @MainActor in
+                        let success = await service.addAndCreate(config)
+                        isCreating = false
+                        if success {
+                            showCreateForm = false
+                        } else {
+                            createError = "虚拟显示器创建失败，请重试"
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                                createError = nil
+                            }
+                        }
+                    }
                 })
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)
+            }
+        }
+        .alert("确认删除", isPresented: Binding(
+            get: { configToDelete != nil },
+            set: { if !$0 { configToDelete = nil } }
+        )) {
+            Button("删除", role: .destructive) {
+                if let id = configToDelete {
+                    service.removeConfig(id: id)
+                }
+                configToDelete = nil
+            }
+            Button("取消", role: .cancel) {
+                configToDelete = nil
+            }
+        } message: {
+            if let id = configToDelete, service.isActive(id) {
+                Text("此虚拟显示器当前处于活跃状态，删除后将立即停用。")
+            } else {
+                Text("确认删除此虚拟显示器配置？")
             }
         }
     }
@@ -80,15 +127,29 @@ struct VirtualDisplayView: View {
             }
 
             // Delete button
-            Button(action: { service.removeConfig(id: config.id) }) {
-                Image(systemName: "trash")
+            Button(action: {
+                configToDelete = config.id
+            }) {
+                Label("删除", systemImage: "trash")
                     .font(.caption)
-                    .foregroundColor(.red.opacity(0.8))
+                    .foregroundColor(.red)
             }
             .buttonStyle(.plain)
+            .help("删除此虚拟显示器")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(Color.secondary.opacity(0.08))
+        )
+        .contextMenu {
+            Button(role: .destructive) {
+                configToDelete = config.id
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
     }
 }
 
@@ -96,6 +157,7 @@ struct VirtualDisplayView: View {
 
 /// Inline form for creating a new virtual display configuration.
 struct CreateVirtualDisplayForm: View {
+    @Binding var isCreating: Bool
     let onConfirm: (VirtualDisplayService.VirtualDisplayConfig) -> Void
 
     @State private var name: String = "虚拟显示器"
@@ -116,9 +178,9 @@ struct CreateVirtualDisplayForm: View {
                 Text("名称")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .frame(width: 50, alignment: .leading)
+                    .frame(width: 44, alignment: .leading)
                 TextField("显示器名称", text: $name)
-                    .textFieldStyle(.plain)
+                    .textFieldStyle(.roundedBorder)
                     .font(.caption)
             }
 
@@ -127,7 +189,7 @@ struct CreateVirtualDisplayForm: View {
                 Text("分辨率")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .frame(width: 50, alignment: .leading)
+                    .frame(width: 44, alignment: .leading)
                 Picker("", selection: $selectedPreset) {
                     ForEach(presets.indices, id: \.self) { i in
                         Text(presets[i].label).tag(i)
@@ -136,6 +198,7 @@ struct CreateVirtualDisplayForm: View {
                 .pickerStyle(.menu)
                 .font(.caption)
                 .labelsHidden()
+                .help("选择虚拟显示器分辨率")
             }
 
             // HiDPI toggle
@@ -143,11 +206,12 @@ struct CreateVirtualDisplayForm: View {
                 Text("HiDPI")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .frame(width: 50, alignment: .leading)
+                    .frame(width: 44, alignment: .leading)
                 Toggle("", isOn: $hiDPI)
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .controlSize(.mini)
+                    .help("启用高分辨率模式（Retina）")
                 Text("启用高分辨率缩放")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -158,7 +222,7 @@ struct CreateVirtualDisplayForm: View {
                 Text("自动")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .frame(width: 50, alignment: .leading)
+                    .frame(width: 44, alignment: .leading)
                 Toggle("", isOn: $autoCreate)
                     .toggleStyle(.switch)
                     .labelsHidden()
@@ -170,16 +234,25 @@ struct CreateVirtualDisplayForm: View {
 
             // Confirm button
             Button(action: confirm) {
-                Text("创建")
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 6) {
+                    if isCreating {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .frame(width: 14, height: 14)
+                    }
+                    Text(isCreating ? "创建中..." : "创建")
+                        .frame(maxWidth: .infinity)
+                }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
+            .disabled(isCreating)
         }
         .padding(.vertical, 4)
     }
 
     private func confirm() {
+        guard !isCreating else { return }
         let preset = presets[selectedPreset]
         let config = VirtualDisplayService.VirtualDisplayConfig(
             name: name.isEmpty ? "虚拟显示器" : name,

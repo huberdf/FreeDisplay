@@ -24,10 +24,10 @@ struct ImageAdjustmentView: View {
         VStack(alignment: .leading, spacing: 0) {
 
             // ── Group 1: Global adjustments ────────────────────────────────
-            adjustRow(icon: "circle.righthalf.filled",   label: "对比度",  value: $contrast)
-            adjustRow(icon: "sparkle",                   label: "伽马值",  value: $gammaVal)
-            adjustRow(icon: "bolt.fill",                 label: "增益",    value: $gain)
-            adjustRow(icon: "thermometer.medium",        label: "色温",    value: $colorTemperature)
+            adjustRow(icon: "circle.righthalf.filled",   label: "对比度",  value: $contrast).help("调整 对比度")
+            adjustRow(icon: "sparkle",                   label: "伽马值",  value: $gammaVal).help("调整 伽马值")
+            adjustRow(icon: "bolt.fill",                 label: "增益",    value: $gain).help("调整 增益")
+            adjustRow(icon: "thermometer.medium",        label: "色温",    value: $colorTemperature).help("调整 色温")
             quantizationRow
 
             Divider()
@@ -35,18 +35,18 @@ struct ImageAdjustmentView: View {
                 .padding(.vertical, 2)
 
             // ── Group 2: Per-channel gamma ─────────────────────────────────
-            adjustRow(icon: "r.circle",      label: "伽马值 R",  value: $rGamma, accent: .red)
-            adjustRow(icon: "g.circle",      label: "伽马值 G",  value: $gGamma, accent: .green)
-            adjustRow(icon: "b.circle",      label: "伽马值 B",  value: $bGamma, accent: .blue)
+            adjustRow(icon: "r.circle",      label: "伽马值 R",  value: $rGamma, accent: .red).help("调整 红色伽马值")
+            adjustRow(icon: "g.circle",      label: "伽马值 G",  value: $gGamma, accent: .green).help("调整 绿色伽马值")
+            adjustRow(icon: "b.circle",      label: "伽马值 B",  value: $bGamma, accent: .blue).help("调整 蓝色伽马值")
 
             Divider()
                 .padding(.horizontal, 12)
                 .padding(.vertical, 2)
 
             // ── Group 3: Per-channel gain ──────────────────────────────────
-            adjustRow(icon: "r.circle.fill", label: "增益 R",    value: $rGain,  accent: .red)
-            adjustRow(icon: "g.circle.fill", label: "增益 G",    value: $gGain,  accent: .green)
-            adjustRow(icon: "b.circle.fill", label: "增益 B",    value: $bGain,  accent: .blue)
+            adjustRow(icon: "r.circle.fill", label: "增益 R",    value: $rGain,  accent: .red).help("调整 红色增益")
+            adjustRow(icon: "g.circle.fill", label: "增益 G",    value: $gGain,  accent: .green).help("调整 绿色增益")
+            adjustRow(icon: "b.circle.fill", label: "增益 B",    value: $bGain,  accent: .blue).help("调整 蓝色增益")
 
             Divider()
                 .padding(.horizontal, 12)
@@ -74,6 +74,7 @@ struct ImageAdjustmentView: View {
                     isInverted.toggle()
                     commitAdjustment()
                 }
+                .help("反转显示器色彩（类似夜间模式）")
 
                 actionButton(
                     title: isPaused ? "继续调整" : "暂停调整",
@@ -87,14 +88,16 @@ struct ImageAdjustmentView: View {
                         commitAdjustment()
                     }
                 }
+                .help("暂时停用色彩调整，恢复原始显示")
 
                 actionButton(
-                    title: "重置",
+                    title: "重置全部",
                     systemImage: "arrow.counterclockwise",
                     isActive: false
                 ) {
                     resetAll()
                 }
+                .help("重置所有色彩调整为默认值")
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
@@ -110,16 +113,20 @@ struct ImageAdjustmentView: View {
                 quantLevels = Double(saved.quantizationLevels)
                 isInverted = saved.isInverted
                 isPaused = saved.isPaused
+                // Re-apply visually so the display matches the saved state immediately.
+                if !saved.isPaused {
+                    GammaService.shared.apply(saved, for: display.displayID)
+                }
             }
         }
         .onDisappear {
             let isAtZero = contrast == 0 && gammaVal == 0 && gain == 0 &&
                 colorTemperature == 0 && rGamma == 0 && gGamma == 0 && bGamma == 0 &&
                 rGain == 0 && gGain == 0 && bGain == 0 && !isInverted &&
-                quantLevels >= 256
+                quantLevels == 256
             if isAtZero {
-                GammaService.shared.clearSavedState()
-                GammaService.shared.restoreColorSync()
+                GammaService.shared.clearSavedState(for: display.displayID)
+                GammaService.shared.resetSingleDisplay(display.displayID)
             } else {
                 let adj = GammaAdjustment(
                     contrast: contrast, gammaVal: gammaVal, gain: gain,
@@ -142,29 +149,7 @@ struct ImageAdjustmentView: View {
         value: Binding<Double>,
         accent: Color = .blue
     ) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundColor(accent)
-                .frame(width: 18)
-                .font(.caption)
-
-            Text(label)
-                .font(.caption)
-                .frame(width: 72, alignment: .leading)
-
-            Slider(value: value, in: -100...100, step: 1) { _ in
-                commitAdjustment()
-            }
-            .tint(accent)
-
-            Text(percentLabel(value.wrappedValue))
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .frame(width: 38, alignment: .trailing)
-                .monospacedDigit()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 3)
+        AdjustRow(icon: icon, label: label, value: value, accent: accent, commitAction: commitAdjustment)
     }
 
     // MARK: - Quantization row
@@ -183,8 +168,9 @@ struct ImageAdjustmentView: View {
             Slider(value: $quantLevels, in: 2...256, step: 1) { _ in
                 commitAdjustment()
             }
+            .help("调整 量化级别")
 
-            Text(quantLevels >= 256 ? "∞" : "\(Int(quantLevels))")
+            Text(quantLevels >= 255 ? "∞" : "\(Int(quantLevels))")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .frame(width: 38, alignment: .trailing)
@@ -220,11 +206,6 @@ struct ImageAdjustmentView: View {
 
     // MARK: - Helpers
 
-    private func percentLabel(_ value: Double) -> String {
-        let sign = value > 0 ? "+" : ""
-        return "\(sign)\(Int(value))%"
-    }
-
     private func commitAdjustment() {
         guard !isPaused else { return }
         let adj = GammaAdjustment(
@@ -241,6 +222,7 @@ struct ImageAdjustmentView: View {
         GammaService.shared.apply(adj, for: display.displayID)
     }
 
+    @MainActor
     private func resetAll() {
         contrast = 0; gammaVal = 0; gain = 0; colorTemperature = 0
         rGamma = 0; gGamma = 0; bGamma = 0
@@ -248,7 +230,56 @@ struct ImageAdjustmentView: View {
         quantLevels = 256
         isInverted = false
         isPaused = false
-        GammaService.shared.clearSavedState()
-        GammaService.shared.restoreColorSync()
+        GammaService.shared.clearSavedState(for: display.displayID)
+        GammaService.shared.resetSingleDisplay(display.displayID)
+    }
+}
+
+private struct AdjustRow: View {
+    let icon: String
+    let label: String
+    @Binding var value: Double
+    let accent: Color
+    let commitAction: () -> Void
+
+    @State private var highlighted: Bool = false
+
+    private func percentLabel(_ v: Double) -> String {
+        let sign = v > 0 ? "+" : ""
+        return "\(sign)\(Int(v))%"
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundColor(accent)
+                .frame(width: 18)
+                .font(.caption)
+
+            Text(label)
+                .font(.caption)
+                .frame(width: 72, alignment: .leading)
+
+            Slider(value: $value, in: -100...100, step: 1) { editing in
+                if !editing {
+                    commitAction()
+                    withAnimation(.easeOut(duration: 0.3)) { highlighted = true }
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 400_000_000)
+                        withAnimation(.easeOut(duration: 0.3)) { highlighted = false }
+                    }
+                }
+            }
+            .tint(accent)
+
+            Text(percentLabel(value))
+                .font(.caption)
+                .foregroundColor(highlighted ? accent : .secondary)
+                .frame(width: 38, alignment: .trailing)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
     }
 }

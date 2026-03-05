@@ -24,22 +24,27 @@ final class SettingsService: ObservableObject, @unchecked Sendable {
     // MARK: - Keys
 
     private enum Keys {
-        static let launchAtLogin          = "launchAtLogin"
-        static let menuWidth              = "menuWidth"
-        static let showCombinedBrightness = "showCombinedBrightness"
-        static let ddcCacheTTL            = "ddcCacheTTL"
-        static let checkUpdatesOnLaunch   = "checkUpdatesOnLaunch"
-        static let colorPickerHistory     = "colorPickerHistory"
+        static let launchAtLogin          = "fd.launchAtLogin"
+        static let launchAtLoginPrompted  = "fd.launchAtLogin.prompted"
+        static let menuWidth              = "fd.menuWidth"
+        static let showCombinedBrightness = "fd.showCombinedBrightness"
+        static let ddcCacheTTL            = "fd.ddcCacheTTL"
+        static let checkUpdatesOnLaunch   = "fd.checkUpdatesOnLaunch"
+        static let colorPickerHistory     = "fd.colorPickerHistory"
         // Per-display keys use prefix + displayID
-        static let brightnessPrefix       = "brightness_"
-        static let contrastPrefix         = "contrast_"
-        static let favoriteModesPrefix    = "favModes_"
+        static let brightnessPrefix       = "fd.brightness_"
+        static let contrastPrefix         = "fd.contrast_"
     }
 
     // MARK: - Published Settings
 
     @Published var launchAtLogin: Bool = false {
         didSet { defaults.set(launchAtLogin, forKey: Keys.launchAtLogin) }
+    }
+
+    /// Whether the first-launch "enable Launch at Login?" prompt has been shown.
+    @Published var launchAtLoginPrompted: Bool = false {
+        didSet { defaults.set(launchAtLoginPrompted, forKey: Keys.launchAtLoginPrompted) }
     }
 
     @Published var menuWidth: Double = 320 {
@@ -87,14 +92,6 @@ final class SettingsService: ObservableObject, @unchecked Sendable {
         defaults.set(value, forKey: Keys.contrastPrefix + "\(displayID)")
     }
 
-    func favoriteModes(for displayID: CGDirectDisplayID) -> [String] {
-        return defaults.stringArray(forKey: Keys.favoriteModesPrefix + "\(displayID)") ?? []
-    }
-
-    func setFavoriteModes(_ modes: [String], for displayID: CGDirectDisplayID) {
-        defaults.set(modes, forKey: Keys.favoriteModesPrefix + "\(displayID)")
-    }
-
     // MARK: - Color History
 
     func addColorToHistory(_ hex: String) {
@@ -112,7 +109,9 @@ final class SettingsService: ObservableObject, @unchecked Sendable {
             let data = try JSONEncoder().encode(value)
             try data.write(to: url, options: .atomic)
         } catch {
+            #if DEBUG
             print("[SettingsService] Failed to save \(filename): \(error)")
+            #endif
         }
     }
 
@@ -125,7 +124,10 @@ final class SettingsService: ObservableObject, @unchecked Sendable {
     // MARK: - Load All
 
     private func loadAll() {
-        launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
+        // Sync launch-at-login from the authoritative SMAppService state, not just UserDefaults.
+        // This handles the case where the user toggled it externally or after a fresh install.
+        launchAtLogin = LaunchService.shared.isEnabled
+        launchAtLoginPrompted = defaults.bool(forKey: Keys.launchAtLoginPrompted)
         menuWidth = defaults.object(forKey: Keys.menuWidth) != nil
             ? defaults.double(forKey: Keys.menuWidth) : 320
         showCombinedBrightness = defaults.object(forKey: Keys.showCombinedBrightness) != nil

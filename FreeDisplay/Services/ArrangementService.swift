@@ -10,46 +10,60 @@ class ArrangementService {
     private init() {}
 
     /// Moves the given display to the specified position in the global coordinate space.
+    /// The entire Begin→Origin→Complete transaction runs inside `CGHelpers.runWithTimeout`
+    /// so `CGCompleteDisplayConfiguration` cannot block indefinitely on WindowServer IPC.
     /// - Returns: true if the configuration was applied successfully.
     @discardableResult
-    func setPosition(x: Int, y: Int, for displayID: CGDirectDisplayID) -> Bool {
-        var config: CGDisplayConfigRef?
-        guard CGBeginDisplayConfiguration(&config) == .success,
-              let config else { return false }
-
-        CGConfigureDisplayOrigin(config, displayID, Int32(x), Int32(y))
-        let result = CGCompleteDisplayConfiguration(config, .forSession)
-        return result == .success
+    func setPosition(x: Int, y: Int, for displayID: CGDirectDisplayID) async -> Bool {
+        await CGHelpers.runWithTimeout(seconds: 10, fallback: false) {
+            var config: CGDisplayConfigRef?
+            guard CGBeginDisplayConfiguration(&config) == .success,
+                  let cfg = config else { return false }
+            CGConfigureDisplayOrigin(cfg, displayID, Int32(x), Int32(y))
+            let result = CGCompleteDisplayConfiguration(cfg, .forSession)
+            if result != .success {
+                CGCancelDisplayConfiguration(cfg)
+                return false
+            }
+            return true
+        }
     }
 
     /// Makes the target display the main display by moving it to origin (0, 0).
     /// Moves the current main display to the position previously occupied by the target.
+    /// The entire Begin→Origin→Complete transaction runs inside `CGHelpers.runWithTimeout`
+    /// so `CGCompleteDisplayConfiguration` cannot block indefinitely on WindowServer IPC.
     /// - Returns: true if the configuration was applied successfully.
     @discardableResult
-    func setAsMainDisplay(_ targetID: CGDirectDisplayID, among displays: [DisplayInfo]) -> Bool {
+    func setAsMainDisplay(_ targetID: CGDirectDisplayID, among displays: [DisplayInfo]) async -> Bool {
         guard let target = displays.first(where: { $0.displayID == targetID }),
               let currentMain = displays.first(where: { $0.isMain }),
               currentMain.displayID != targetID else {
             return false
         }
 
-        var config: CGDisplayConfigRef?
-        guard CGBeginDisplayConfiguration(&config) == .success,
-              let config else { return false }
+        // Capture value types only — no OpaquePointer crossing the @Sendable boundary.
+        let targetOriginX = Int32(target.bounds.origin.x)
+        let targetOriginY = Int32(target.bounds.origin.y)
+        let currentMainID = currentMain.displayID
 
-        // Move target to origin → it becomes the new main display
-        CGConfigureDisplayOrigin(config, targetID, 0, 0)
+        return await CGHelpers.runWithTimeout(seconds: 10, fallback: false) {
+            var config: CGDisplayConfigRef?
+            guard CGBeginDisplayConfiguration(&config) == .success,
+                  let cfg = config else { return false }
 
-        // Move old main to where the target was, or to the right of the new main if target was at 0
-        let targetOriginX = Int(target.bounds.origin.x)
-        let targetOriginY = Int(target.bounds.origin.y)
-        let newMainX: Int32 = targetOriginX == 0
-            ? Int32(target.bounds.width)   // avoid overlap: put old main to the right
-            : Int32(targetOriginX)
-        let newMainY: Int32 = Int32(targetOriginY)
-        CGConfigureDisplayOrigin(config, currentMain.displayID, newMainX, newMainY)
+            // Move target to origin → it becomes the new main display
+            CGConfigureDisplayOrigin(cfg, targetID, 0, 0)
 
-        let result = CGCompleteDisplayConfiguration(config, .forSession)
-        return result == .success
+            // Move old main to where the target was.
+            CGConfigureDisplayOrigin(cfg, currentMainID, targetOriginX, targetOriginY)
+
+            let result = CGCompleteDisplayConfiguration(cfg, .forSession)
+            if result != .success {
+                CGCancelDisplayConfiguration(cfg)
+                return false
+            }
+            return true
+        }
     }
 }

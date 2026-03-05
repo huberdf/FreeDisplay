@@ -55,7 +55,7 @@ final class SystemColorViewModel: ObservableObject {
 
 struct SystemColorView: View {
     @StateObject private var vm = SystemColorViewModel()
-    @StateObject private var settings = SettingsService.shared
+    @ObservedObject private var settings = SettingsService.shared
     @State private var showHistory = false
 
     var body: some View {
@@ -153,25 +153,17 @@ struct SystemColorMenuEntry: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Image(systemName: "eyedropper.halffull")
-                    .foregroundColor(.orange)
-                    .frame(width: 20)
-                Text("系统颜色")
-                    .font(.body)
-                Spacer()
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
-            .onTapGesture { isExpanded.toggle() }
+            ExpandableRow(
+                icon: "eyedropper.halffull",
+                iconColor: .orange,
+                label: "系统颜色",
+                isExpanded: $isExpanded
+            )
 
             if isExpanded {
                 SystemColorView()
                     .padding(.leading, 8)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
     }

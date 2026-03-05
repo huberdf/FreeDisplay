@@ -1,10 +1,11 @@
 import Foundation
 import CoreGraphics
 import IOKit
+import AppKit
 
 @MainActor
 class DisplayInfo: ObservableObject, Identifiable {
-    let id: CGDirectDisplayID
+    nonisolated var id: CGDirectDisplayID { displayID }
     let displayID: CGDirectDisplayID
     @Published var name: String
     @Published var isBuiltin: Bool
@@ -14,17 +15,26 @@ class DisplayInfo: ObservableObject, Identifiable {
     @Published var bounds: CGRect
     @Published var pixelWidth: Int
     @Published var pixelHeight: Int
-    @Published var rotation: Double
     @Published var brightness: Double
     @Published var availableModes: [DisplayMode]
     @Published var currentDisplayMode: DisplayMode?
-    @Published var ddcValues: [UInt8: UInt16] = [:]
+    @Published var ddcValues: [UInt8: UInt16?] = [:]
     let vendorNumber: UInt32
     let modelNumber: UInt32
     let serialNumber: UInt32
 
+    /// A stable identifier for the physical display that persists across sleep/wake
+    /// even if macOS reassigns the CGDirectDisplayID.
+    var displayUUID: String {
+        if let cfUUID = CGDisplayCreateUUIDFromDisplayID(displayID),
+           let uuidStr = CFUUIDCreateString(nil, cfUUID.takeRetainedValue()) {
+            return uuidStr as String
+        }
+        // Fallback: vendor+model+serial hash is more stable than raw displayID
+        return "v\(vendorNumber)-m\(modelNumber)-s\(serialNumber)"
+    }
+
     init(displayID: CGDirectDisplayID) {
-        self.id = displayID
         self.displayID = displayID
         let builtin = CGDisplayIsBuiltin(displayID) != 0
         self.isBuiltin = builtin
@@ -34,8 +44,9 @@ class DisplayInfo: ObservableObject, Identifiable {
         self.bounds = CGDisplayBounds(displayID)
         self.pixelWidth = CGDisplayPixelsWide(displayID)
         self.pixelHeight = CGDisplayPixelsHigh(displayID)
-        self.rotation = CGDisplayRotation(displayID)
-        self.brightness = 50.0
+        // Use persisted brightness as the initial value if available, otherwise 50.0.
+        // BrightnessService will overwrite this with the real hardware value once probed.
+        self.brightness = SettingsService.shared.brightness(for: displayID) ?? 50.0
         self.availableModes = []
         self.currentDisplayMode = DisplayMode.currentMode(for: displayID)
         let vendor = CGDisplayVendorNumber(displayID)
@@ -47,84 +58,18 @@ class DisplayInfo: ObservableObject, Identifiable {
         if builtin {
             self.name = "内建显示屏"
         } else {
-            self.name = "Display \(displayID)"
+            self.name = NSScreen.screen(for: displayID)?.localizedName ?? "Display \(displayID)"
         }
+
     }
 
     func loadDetails() async {
-        let vendor = vendorNumber
-        let model = modelNumber
-        let builtin = isBuiltin
         let displayID = self.displayID
 
         let modes = await Task.detached(priority: .userInitiated) {
             DisplayMode.availableModes(for: displayID)
         }.value
 
-        let resolvedName: String?
-        if !builtin {
-            resolvedName = await Task.detached(priority: .userInitiated) {
-                DisplayInfo.lookupDisplayName(vendor: vendor, model: model)
-            }.value
-        } else {
-            resolvedName = nil
-        }
-
         self.availableModes = modes
-        if let resolved = resolvedName {
-            self.name = resolved
-        }
-    }
-
-    private static func lookupDisplayName(vendor: UInt32, model: UInt32) -> String? {
-        var iterator: io_iterator_t = 0
-        let matching = IOServiceMatching("IODisplayConnect")
-        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
-            return nil
-        }
-        defer { IOObjectRelease(iterator) }
-
-        var service = IOIteratorNext(iterator)
-        while service != 0 {
-            defer {
-                IOObjectRelease(service)
-                service = IOIteratorNext(iterator)
-            }
-
-            guard let cfDict = IODisplayCreateInfoDictionary(service, IOOptionBits(kIODisplayOnlyPreferredName))?.takeRetainedValue() else {
-                continue
-            }
-            let dict = cfDict as NSDictionary
-
-            let serviceVendor: UInt32
-            let serviceModel: UInt32
-
-            if let v = dict["DisplayVendorID"] as? UInt32 {
-                serviceVendor = v
-            } else if let v = dict["DisplayVendorID"] as? Int {
-                serviceVendor = UInt32(bitPattern: Int32(truncatingIfNeeded: v))
-            } else {
-                continue
-            }
-
-            if let m = dict["DisplayProductID"] as? UInt32 {
-                serviceModel = m
-            } else if let m = dict["DisplayProductID"] as? Int {
-                serviceModel = UInt32(bitPattern: Int32(truncatingIfNeeded: m))
-            } else {
-                continue
-            }
-
-            guard serviceVendor == vendor && serviceModel == model else {
-                continue
-            }
-
-            if let productNames = dict["DisplayProductName"] as? [String: String],
-               let firstName = productNames.values.first {
-                return firstName
-            }
-        }
-
-        return nil
     }
 }

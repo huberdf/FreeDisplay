@@ -1,73 +1,49 @@
 import SwiftUI
 
-/// "自动亮度" section — reads ambient light sensor and adjusts display brightness automatically.
+/// "自动亮度" section — follows builtin screen brightness and adjusts external display brightness automatically.
 struct AutoBrightnessView: View {
     @StateObject private var service = AutoBrightnessService.shared
+    @State private var isHovered = false
+
+    /// True only after the service has polled at least once and found no builtin display.
+    private var builtinUnavailable: Bool {
+        service.hasPolled && service.builtinBrightness <= 0
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-
+        VStack(alignment: .leading, spacing: 0) {
             // Main toggle
             HStack {
-                Image(systemName: "a.circle.fill")
-                    .foregroundColor(service.isEnabled ? .blue : .secondary)
-                    .frame(width: 20)
-                Text("自动亮度")
-                    .font(.body)
+                MenuItemIcon(systemName: "sun.max.trianglebadge.exclamationmark", color: service.isEnabled ? .orange : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("自动亮度")
+                        .font(.body)
+                    Text(statusText)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
                 Spacer()
                 Toggle("", isOn: $service.isEnabled)
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .controlSize(.small)
+                    .disabled(builtinUnavailable)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
+            .background(Color.primary.opacity(isHovered ? 0.06 : 0))
+            .onHover { isHovered = $0 }
             .contentShape(Rectangle())
-
-            if service.isEnabled {
-                // Sensitivity slider
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("灵敏度")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(sensitivityLabel)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    Slider(value: $service.sensitivity, in: 0...1, step: 0.1)
-                        .controlSize(.small)
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 4)
-
-                // Lux status
-                HStack {
-                    Image(systemName: "lightbulb.fill")
-                        .font(.caption)
-                        .foregroundColor(.yellow)
-                    if service.lastLux > 0 {
-                        Text(String(format: "当前环境光: %.0f lux", service.lastLux))
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    } else {
-                        Text("未检测到环境光传感器")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 6)
-            }
         }
     }
 
-    private var sensitivityLabel: String {
-        switch service.sensitivity {
-        case 0..<0.3: return "低"
-        case 0.3..<0.7: return "中"
-        default: return "高"
+    private var statusText: String {
+        if builtinUnavailable {
+            return "未检测到内建显示屏"
+        } else if service.isEnabled {
+            return "跟随内建屏亮度同步中"
+        } else {
+            return "跟随内建屏亮度调整外接显示器"
         }
     }
 }

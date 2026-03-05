@@ -7,37 +7,115 @@ final class HiDPIService: @unchecked Sendable {
     static let shared = HiDPIService()
     private init() {}
 
+    private var refreshTask: Task<Void, Never>?
+
     private let overridesBase = URL(fileURLWithPath: "/Library/Displays/Contents/Resources/Overrides")
 
     // MARK: - Public API
 
+    /// Checks whether HiDPI is enabled for the given display via plist override.
+    func isHiDPIEnabled(for displayID: CGDirectDisplayID, vendor: UInt32, product: UInt32) -> Bool {
+        FileManager.default.fileExists(atPath: overridePlistURL(vendor: vendor, product: product).path)
+    }
+
+    /// Checks whether HiDPI is enabled for the given display via plist override only.
     func isHiDPIEnabled(vendor: UInt32, product: UInt32) -> Bool {
         let plistURL = overridePlistURL(vendor: vendor, product: product)
         return FileManager.default.fileExists(atPath: plistURL.path)
     }
 
-    func enableHiDPI(vendor: UInt32, product: UInt32, nativeWidth: Int, nativeHeight: Int) -> String? {
-        let dir = overrideDir(vendor: vendor, product: product)
-        let plistURL = overridePlistURL(vendor: vendor, product: product)
+    /// Enables HiDPI for an external display via plist override.
+    /// Requires display reconnect (or reboot) to apply.
+    ///
+    /// Returns nil on success, or an error string on failure.
+    func enableHiDPI(for displayID: CGDirectDisplayID,
+                     vendor: UInt32,
+                     product: UInt32,
+                     nativeWidth: Int,
+                     nativeHeight: Int) async -> String? {
+        return enableHiDPIPlist(vendor: vendor, product: product,
+                                nativeWidth: nativeWidth, nativeHeight: nativeHeight)
+    }
 
-        do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        } catch {
-            return "无法创建 Override 目录：\(error.localizedDescription)（可能需要管理员权限）"
+    /// Legacy single-path enable (plist only).
+    func enableHiDPI(vendor: UInt32, product: UInt32, nativeWidth: Int, nativeHeight: Int) -> String? {
+        enableHiDPIPlist(vendor: vendor, product: product,
+                         nativeWidth: nativeWidth, nativeHeight: nativeHeight)
+    }
+
+    /// Disables HiDPI for an external display by removing the plist override.
+    func disableHiDPI(for displayID: CGDirectDisplayID,
+                      vendor: UInt32,
+                      product: UInt32) -> String? {
+        return disableHiDPIPlist(vendor: vendor, product: product)
+    }
+
+    /// Legacy single-path disable (plist only).
+    func disableHiDPI(vendor: UInt32, product: UInt32) -> String? {
+        disableHiDPIPlist(vendor: vendor, product: product)
+    }
+
+    /// Refreshes availableModes on the given DisplayInfo after enabling HiDPI.
+    func refreshModes(for display: DisplayInfo) {
+        refreshTask?.cancel()
+        let physicalID = display.displayID
+
+        refreshTask = Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            async let modes = Task.detached(priority: .userInitiated) {
+                DisplayMode.availableModes(for: physicalID)
+            }.value
+            async let current = Task.detached(priority: .userInitiated) {
+                DisplayMode.currentMode(for: physicalID)
+            }.value
+            display.availableModes = await modes
+            display.currentDisplayMode = await current
         }
+    }
+
+    // MARK: - Plist Override
+
+    private func enableHiDPIPlist(vendor: UInt32, product: UInt32,
+                                   nativeWidth: Int, nativeHeight: Int) -> String? {
+        let dirPath = overrideDir(vendor: vendor).path
+        let plistPath = overridePlistURL(vendor: vendor, product: product).path
 
         let scaledModes = generateScaledModes(nativeWidth: nativeWidth, nativeHeight: nativeHeight)
         let plist: [String: Any] = [
-            "DisplayProductName": "FreeDisplay HiDPI Override",
             "scale-resolutions": scaledModes
         ]
 
-        do {
-            let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-            try data.write(to: plistURL, options: .atomic)
-        } catch {
-            return "写入 Override Plist 失败：\(error.localizedDescription)"
+        guard let data = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) else {
+            return "生成 Plist 数据失败"
         }
+
+        // Write to a temp file first, then use privileged helper to move it
+        let tmpPath = NSTemporaryDirectory() + "fd_hidpi_override.plist"
+        do {
+            try data.write(to: URL(fileURLWithPath: tmpPath), options: .atomic)
+        } catch {
+            return "写入临时文件失败：\(error.localizedDescription)"
+        }
+
+        // Use AppleScript to get admin privileges for writing to /Library/Displays/
+        let script = """
+            do shell script "mkdir -p '\(dirPath)' && cp '\(tmpPath)' '\(plistPath)'" with administrator privileges
+            """
+        var error: NSDictionary?
+        guard let appleScript = NSAppleScript(source: script) else {
+            return "创建 AppleScript 失败"
+        }
+        appleScript.executeAndReturnError(&error)
+        if let error = error {
+            let msg = error[NSAppleScript.errorMessage] as? String ?? "未知错误"
+            if msg.contains("canceled") || msg.contains("Cancel") {
+                return "用户取消了授权"
+            }
+            return "管理员授权失败：\(msg)"
+        }
+
+        // Clean up temp file
+        try? FileManager.default.removeItem(atPath: tmpPath)
 
         // Attempt to trigger display mode re-enumeration via IOServiceRequestProbe
         triggerDisplayReenumeration(vendor: vendor, product: product)
@@ -45,21 +123,26 @@ final class HiDPIService: @unchecked Sendable {
         return nil
     }
 
-    func disableHiDPI(vendor: UInt32, product: UInt32) -> String? {
-        let plistURL = overridePlistURL(vendor: vendor, product: product)
-        guard FileManager.default.fileExists(atPath: plistURL.path) else { return nil }
-        do {
-            try FileManager.default.removeItem(at: plistURL)
-            return nil
-        } catch {
-            return "无法删除 Override Plist：\(error.localizedDescription)"
-        }
-    }
+    private func disableHiDPIPlist(vendor: UInt32, product: UInt32) -> String? {
+        let plistPath = overridePlistURL(vendor: vendor, product: product).path
+        guard FileManager.default.fileExists(atPath: plistPath) else { return nil }
 
-    /// Refreshes availableModes on the given DisplayInfo after enabling HiDPI.
-    func refreshModes(for display: DisplayInfo) {
-        display.availableModes = DisplayMode.availableModes(for: display.displayID)
-        display.currentDisplayMode = DisplayMode.currentMode(for: display.displayID)
+        let script = """
+            do shell script "rm -f '\(plistPath)'" with administrator privileges
+            """
+        var error: NSDictionary?
+        guard let appleScript = NSAppleScript(source: script) else {
+            return "创建 AppleScript 失败"
+        }
+        appleScript.executeAndReturnError(&error)
+        if let error = error {
+            let msg = error[NSAppleScript.errorMessage] as? String ?? "未知错误"
+            if msg.contains("canceled") || msg.contains("Cancel") {
+                return "用户取消了授权"
+            }
+            return "管理员授权失败：\(msg)"
+        }
+        return nil
     }
 
     // MARK: - Helpers
@@ -104,34 +187,48 @@ final class HiDPIService: @unchecked Sendable {
         }
     }
 
-    private func overrideDir(vendor: UInt32, product: UInt32) -> URL {
+    private func overrideDir(vendor: UInt32) -> URL {
         overridesBase
             .appendingPathComponent(String(format: "DisplayVendorID-%x", vendor))
     }
 
     private func overridePlistURL(vendor: UInt32, product: UInt32) -> URL {
-        overrideDir(vendor: vendor, product: product)
+        overrideDir(vendor: vendor)
             .appendingPathComponent(String(format: "DisplayProductID-%x", product))
     }
 
     private func generateScaledModes(nativeWidth: Int, nativeHeight: Int) -> [Data] {
-        let scales: [Double] = [0.5, 0.625, 0.75, 1.0]
-        var result: [Data] = []
+        // Generate HiDPI modes: each entry is 8 bytes big-endian (backingW, backingH)
+        // For a 2560×1440 display, we want:
+        //   1920×1080 HiDPI (backing 3840×2160)
+        //   1600×900  HiDPI (backing 3200×1800)
+        //   1280×720  HiDPI (backing 2560×1440)
+        //   native as HiDPI (backing 5120×2880)
+        var resolutions: [(Int, Int)] = []
+
+        // Native resolution as HiDPI (2x backing)
+        resolutions.append((nativeWidth * 2, nativeHeight * 2))
+
+        // Scaled HiDPI modes
+        let scales: [Double] = [0.75, 0.625, 0.5]
         for scale in scales {
-            let w = Int((Double(nativeWidth) * scale).rounded()) & ~1
-            let h = Int((Double(nativeHeight) * scale).rounded()) & ~1
-            guard w >= 800, h >= 600 else { continue }
-            var bytes = [UInt8](repeating: 0, count: 8)
-            bytes[0] = UInt8((w >> 24) & 0xFF)
-            bytes[1] = UInt8((w >> 16) & 0xFF)
-            bytes[2] = UInt8((w >> 8) & 0xFF)
-            bytes[3] = UInt8(w & 0xFF)
-            bytes[4] = UInt8((h >> 24) & 0xFF)
-            bytes[5] = UInt8((h >> 16) & 0xFF)
-            bytes[6] = UInt8((h >> 8) & 0xFF)
-            bytes[7] = UInt8(h & 0xFF)
-            result.append(Data(bytes))
+            let logicalW = Int((Double(nativeWidth) * scale).rounded()) & ~1
+            let logicalH = Int((Double(nativeHeight) * scale).rounded()) & ~1
+            guard logicalW >= 800, logicalH >= 600 else { continue }
+            resolutions.append((logicalW * 2, logicalH * 2))
         }
-        return result
+
+        return resolutions.map { (backingW, backingH) in
+            var bytes = [UInt8](repeating: 0, count: 8)
+            bytes[0] = UInt8((backingW >> 24) & 0xFF)
+            bytes[1] = UInt8((backingW >> 16) & 0xFF)
+            bytes[2] = UInt8((backingW >> 8) & 0xFF)
+            bytes[3] = UInt8(backingW & 0xFF)
+            bytes[4] = UInt8((backingH >> 24) & 0xFF)
+            bytes[5] = UInt8((backingH >> 16) & 0xFF)
+            bytes[6] = UInt8((backingH >> 8) & 0xFF)
+            bytes[7] = UInt8(backingH & 0xFF)
+            return Data(bytes)
+        }
     }
 }

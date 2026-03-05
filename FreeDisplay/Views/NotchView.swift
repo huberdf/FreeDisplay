@@ -6,6 +6,11 @@ import AppKit
 struct NotchView: View {
     @ObservedObject var display: DisplayInfo
     @State private var isHidingNotch: Bool = false
+    @State private var isHovered = false
+
+    private func syncState() {
+        isHidingNotch = NotchOverlayManager.shared.isShowingOverlay(for: display.displayID)
+    }
 
     private var notchHeight: CGFloat {
         guard display.isBuiltin,
@@ -19,9 +24,7 @@ struct NotchView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Info row
                 HStack {
-                    Image(systemName: "camera.aperture")
-                        .foregroundColor(.blue)
-                        .frame(width: 20)
+                    MenuItemIcon(systemName: "camera.aperture", color: .blue)
                     Text("刘海")
                         .font(.body)
                     Text(String(format: "%.0f pt", notchHeight))
@@ -30,30 +33,34 @@ struct NotchView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 4)
+                .padding(.vertical, 7)
 
                 // Hide/show toggle
                 HStack {
-                    Image(systemName: isHidingNotch ? "eye.slash" : "eye")
-                        .foregroundColor(.secondary)
-                        .frame(width: 20)
-                    Text("隐藏刘海")
+                    MenuItemIcon(systemName: isHidingNotch ? "eye.slash" : "eye", color: .secondary)
+                    Text("隐藏刘海区域")
                         .font(.body)
                     Spacer()
                     Toggle("", isOn: $isHidingNotch)
                         .toggleStyle(.switch)
                         .labelsHidden()
                         .controlSize(.small)
-                        .onChange(of: isHidingNotch) { newValue in
+                        .onChange(of: isHidingNotch) { _, newValue in
                             if newValue {
                                 NotchOverlayManager.shared.showOverlay(for: display.displayID)
                             } else {
                                 NotchOverlayManager.shared.hideOverlay(for: display.displayID)
                             }
                         }
+                        .help("在顶部菜单栏区域显示黑色遮罩以隐藏刘海")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
+                .background(Color.primary.opacity(isHovered ? 0.06 : 0))
+                .onHover { isHovered = $0 }
+            }
+            .onAppear {
+                syncState()
             }
         }
     }

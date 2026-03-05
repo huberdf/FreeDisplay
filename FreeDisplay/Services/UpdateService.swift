@@ -6,8 +6,8 @@ import AppKit
 final class UpdateService: ObservableObject, @unchecked Sendable {
     static let shared = UpdateService()
 
-    // Placeholder — fill these in when the repo is published.
-    private let repoOwner = "freedisplay"
+    // Set these when the repo is published. Placeholder values disable the update check.
+    private let repoOwner = "OWNER"
     private let repoName  = "FreeDisplay"
 
     // Current app bundle version (CFBundleShortVersionString)
@@ -26,6 +26,11 @@ final class UpdateService: ObservableObject, @unchecked Sendable {
     // MARK: - Check for Updates
 
     func checkForUpdates() async {
+        guard !repoOwner.isEmpty, repoOwner != "OWNER", !repoName.isEmpty else {
+            // Repo not yet configured — silently skip update check
+            return
+        }
+        if let last = lastCheckDate, Date().timeIntervalSince(last) < 3600 { return }
         guard !isChecking else { return }
         isChecking = true
         defer { isChecking = false }
@@ -43,7 +48,16 @@ final class UpdateService: ObservableObject, @unchecked Sendable {
                 lastCheckDate = Date()
                 return
             }
-            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let json: [String: Any]?
+            do {
+                json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            } catch {
+                #if DEBUG
+                print("[UpdateService] JSON parse error: \(error)")
+                #endif
+                lastCheckDate = Date()
+                return
+            }
             if let tag = json?["tag_name"] as? String {
                 let clean = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
                 latestVersion = clean

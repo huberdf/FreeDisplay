@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+@preconcurrency import ColorSync
 
 /// Per-display software image adjustment parameters.
 /// All slider values are in the range -100...+100 with 0 = neutral,
@@ -24,15 +25,52 @@ struct GammaAdjustment {
 /// CoreGraphics CGSetDisplayTransferByFormula / CGSetDisplayTransferByTable.
 final class GammaService: @unchecked Sendable {
     static let shared = GammaService()
+    private var terminateObserver: NSObjectProtocol?
+    private let adjustmentsLock = NSLock()
+
     private init() {
-        NotificationCenter.default.addObserver(
+        terminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.clearSavedState()
-            CGDisplayRestoreColorSyncSettings()
+        ) { _ in
+            var displayCount: UInt32 = 0
+            CGGetOnlineDisplayList(32, nil, &displayCount)
+            var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
+            CGGetOnlineDisplayList(displayCount, &displays, &displayCount)
+            for displayID in displays {
+                let size = 256
+                var r = (0..<size).map { CGGammaValue($0) / CGGammaValue(size - 1) }
+                var g = r; var b = r
+                CGSetDisplayTransferByTable(displayID, UInt32(size), &r, &g, &b)
+            }
         }
+    }
+
+    deinit {
+        if let obs = terminateObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+    }
+
+    // MARK: - Active Adjustment Tracking
+
+    /// Stores the most recently applied non-paused adjustment per display.
+    private var activeAdjustments: [CGDirectDisplayID: GammaAdjustment] = [:]
+
+    /// Returns true if there is a currently active (non-paused) gamma adjustment for this display.
+    func hasActiveAdjustment(for displayID: CGDirectDisplayID) -> Bool {
+        adjustmentsLock.withLock {
+            guard let adj = activeAdjustments[displayID] else { return false }
+            return !adj.isPaused
+        }
+    }
+
+    /// Re-applies the stored adjustment (incorporating the current software brightness factor).
+    func reapply(for displayID: CGDirectDisplayID) {
+        let adj = adjustmentsLock.withLock { activeAdjustments[displayID] }
+        guard let adj, !adj.isPaused else { return }
+        applyInternal(adj, for: displayID)
     }
 
     // MARK: - Public API
@@ -40,6 +78,11 @@ final class GammaService: @unchecked Sendable {
     /// Apply a complete GammaAdjustment snapshot to the given display.
     func apply(_ adj: GammaAdjustment, for displayID: CGDirectDisplayID) {
         guard !adj.isPaused else { return }
+        adjustmentsLock.withLock { activeAdjustments[displayID] = adj }
+        applyInternal(adj, for: displayID)
+    }
+
+    private func applyInternal(_ adj: GammaAdjustment, for displayID: CGDirectDisplayID) {
         if adj.quantizationLevels < 256 {
             applyQuantizedTable(adj, for: displayID)
         } else {
@@ -50,23 +93,60 @@ final class GammaService: @unchecked Sendable {
     /// Apply identity transfer (gamma 1.0) to a single display without
     /// discarding stored parameters. Used by "pause" mode.
     func applyIdentity(for displayID: CGDirectDisplayID) {
+        // Mark the adjustment as paused so hasActiveAdjustment returns false.
+        adjustmentsLock.withLock {
+            if var adj = activeAdjustments[displayID] {
+                adj.isPaused = true
+                activeAdjustments[displayID] = adj
+            }
+        }
         CGSetDisplayTransferByFormula(displayID,
             0.0, 1.0, 1.0,
             0.0, 1.0, 1.0,
             0.0, 1.0, 1.0)
     }
 
-    /// Restore all displays to their ColorSync profile settings
-    /// (system-wide reset — no per-display variant in the public API).
+    /// Restore all online displays to identity gamma (per-display, avoids global reset).
     func restoreColorSync() {
-        CGDisplayRestoreColorSyncSettings()
+        adjustmentsLock.withLock { activeAdjustments.removeAll() }
+        var displayCount: UInt32 = 0
+        CGGetOnlineDisplayList(32, nil, &displayCount)
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
+        CGGetOnlineDisplayList(displayCount, &displays, &displayCount)
+        for displayID in displays {
+            resetSingleDisplay(displayID)
+        }
     }
 
-    private static let stateKey = "GammaService.savedAdjustment"
+    /// Resets gamma to identity for a single display without affecting other displays.
+    /// Also removes any custom ColorSync profile override so the factory ICC profile
+    /// is restored, preventing a "flat" / uncalibrated appearance after reset.
+    /// Prefer this over `restoreColorSync()` whenever only one display needs resetting.
+    func resetSingleDisplay(_ displayID: CGDirectDisplayID) {
+        adjustmentsLock.withLock { activeAdjustments.removeValue(forKey: displayID) }
+        let size = 256
+        var r = (0..<size).map { CGGammaValue($0) / CGGammaValue(size - 1) }
+        var g = r; var b = r
+        CGSetDisplayTransferByTable(displayID, UInt32(size), &r, &g, &b)
+
+        // Remove any custom ColorSync profile override so the factory ICC profile is
+        // re-activated (equivalent to a per-display ColorSync restore).
+        if let rawUUID = CGDisplayCreateUUIDFromDisplayID(displayID),
+           let deviceClass = kColorSyncDisplayDeviceClass?.takeUnretainedValue(),
+           let profileIDKey = kColorSyncDeviceDefaultProfileID?.takeUnretainedValue() {
+            let uuid = rawUUID.takeRetainedValue()
+            // Passing NSNull() for the profile key removes the custom override.
+            let removeInfo: NSDictionary = [profileIDKey: NSNull()]
+            ColorSyncDeviceSetCustomProfiles(deviceClass, uuid, removeInfo as CFDictionary)
+        }
+    }
+
+    private static func stateKey(for displayID: CGDirectDisplayID) -> String {
+        "fd.GammaService.savedAdjustment.\(displayID)"
+    }
 
     func saveState(_ adj: GammaAdjustment, for displayID: CGDirectDisplayID) {
         let dict: [String: Any] = [
-            "displayID": displayID,
             "contrast": adj.contrast,
             "gammaVal": adj.gammaVal,
             "gain": adj.gain,
@@ -77,13 +157,11 @@ final class GammaService: @unchecked Sendable {
             "isInverted": adj.isInverted,
             "isPaused": adj.isPaused
         ]
-        UserDefaults.standard.set(dict, forKey: GammaService.stateKey)
+        UserDefaults.standard.set(dict, forKey: GammaService.stateKey(for: displayID))
     }
 
     func loadSavedState(for displayID: CGDirectDisplayID) -> GammaAdjustment? {
-        guard let dict = UserDefaults.standard.dictionary(forKey: GammaService.stateKey),
-              let savedID = dict["displayID"] as? CGDirectDisplayID,
-              savedID == displayID else { return nil }
+        guard let dict = UserDefaults.standard.dictionary(forKey: GammaService.stateKey(for: displayID)) else { return nil }
         var adj = GammaAdjustment()
         adj.contrast           = dict["contrast"]           as? Double ?? 0
         adj.gammaVal           = dict["gammaVal"]           as? Double ?? 0
@@ -101,8 +179,16 @@ final class GammaService: @unchecked Sendable {
         return adj
     }
 
-    func clearSavedState() {
-        UserDefaults.standard.removeObject(forKey: GammaService.stateKey)
+    func clearSavedState(for displayID: CGDirectDisplayID) {
+        UserDefaults.standard.removeObject(forKey: GammaService.stateKey(for: displayID))
+    }
+
+    /// Re-applies the persisted gamma adjustment for a display (e.g. after wake from sleep
+    /// or display reconnect). No-op if no saved state exists or the adjustment is paused.
+    func reapplyIfNeeded(for displayID: CGDirectDisplayID) {
+        guard let adj = loadSavedState(for: displayID), !adj.isPaused else { return }
+        adjustmentsLock.withLock { activeAdjustments[displayID] = adj }
+        applyInternal(adj, for: displayID)
     }
 
     // MARK: - Formula mode
@@ -114,7 +200,13 @@ final class GammaService: @unchecked Sendable {
     }
 
     private func applyFormula(_ adj: GammaAdjustment, for displayID: CGDirectDisplayID) {
-        let p = channelParams(for: adj)
+        var p = channelParams(for: adj)
+        // Incorporate software brightness factor so BrightnessService and GammaService
+        // do not overwrite each other's transfer function.
+        let brightnessFactor = max(0.05, BrightnessService.shared.currentSoftwareBrightness(for: displayID) ?? 1.0)
+        p.rHi = min(1.0, p.rHi * brightnessFactor)
+        p.gHi = min(1.0, p.gHi * brightnessFactor)
+        p.bHi = min(1.0, p.bHi * brightnessFactor)
         CGSetDisplayTransferByFormula(displayID,
             CGGammaValue(p.rLo), CGGammaValue(p.rHi), CGGammaValue(p.rGam),
             CGGammaValue(p.gLo), CGGammaValue(p.gHi), CGGammaValue(p.gGam),
@@ -161,6 +253,11 @@ final class GammaService: @unchecked Sendable {
             swap(&gLo, &gHi)
             swap(&bLo, &bHi)
         }
+
+        // ── Clamp to [0, 1] required by CGSetDisplayTransferByFormula ──
+        rLo = max(0.0, rLo); rHi = min(1.0, rHi)
+        gLo = max(0.0, gLo); gHi = min(1.0, gHi)
+        bLo = max(0.0, bLo); bHi = min(1.0, bHi)
 
         return ChannelParams(
             rLo: rLo, rHi: rHi, rGam: rGammaExp,
@@ -228,7 +325,12 @@ final class GammaService: @unchecked Sendable {
         var greenTable = [CGGammaValue](repeating: 0, count: capacity)
         var blueTable  = [CGGammaValue](repeating: 0, count: capacity)
 
-        let p = channelParams(for: adj)
+        var p = channelParams(for: adj)
+        // Incorporate software brightness factor, matching applyFormula behaviour.
+        let brightnessFactor = max(0.05, BrightnessService.shared.currentSoftwareBrightness(for: displayID) ?? 1.0)
+        p.rHi = min(1.0, p.rHi * brightnessFactor)
+        p.gHi = min(1.0, p.gHi * brightnessFactor)
+        p.bHi = min(1.0, p.bHi * brightnessFactor)
 
         for i in 0..<capacity {
             let input = Double(i) / Double(capacity - 1)

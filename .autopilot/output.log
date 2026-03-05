@@ -4,3 +4,25 @@
 
   [并行模式] 确保 git 环境就绪...
 [13:05:07] 工作区有未提交变更，自动提交
+[main 7c8da6e] autopilot: auto-commit before parallel batch [2026-03-03 13:05:07]
+ Committer: mac-jm <jm@jm.local>
+Your name and email address were configured automatically based
+on your username and hostname. Please check that they are accurate.
+You can suppress this message by setting them explicitly. Run the
+following command and follow the instructions in your editor to edit
+your configuration file:
+
+    git config --global --edit
+
+After doing this, you may fix the identity used for this commit with:
+
+    git commit --amend --reset-author
+
+ 9 files changed, 120 insertions(+), 96 deletions(-)
+ create mode 100644 .autopilot/output.log
+  [并行模式] git 环境就绪
+
+[13:05:07] 启动 max=5 fail=3 timeout=900 parallel=3
+── 并行批次 1/5 | 剩余: 38 ──
+[13:05:07] 并行批次 1 开始
+/Users/jm/.claude/skills/project-autopilot/scripts/autopilot.sh: line 470: mapfile: command not found

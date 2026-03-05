@@ -11,11 +11,23 @@ private func displayReconfigCallback(
     guard let ptr = userInfo else { return }
     let manager = Unmanaged<DisplayManager>.fromOpaque(ptr).takeUnretainedValue()
 
-    let relevant: CGDisplayChangeSummaryFlags = [.addFlag, .removeFlag, .setMainFlag]
+    let relevant: CGDisplayChangeSummaryFlags = [.addFlag, .removeFlag, .setMainFlag, .setModeFlag]
     guard !flags.intersection(relevant).isEmpty else { return }
 
+    // Skip the begin-configuration notification; only act when the change is complete.
+    // (beginConfigurationFlag is set at the start of a transaction; absence means it finished.)
+    guard !flags.contains(.beginConfigurationFlag) else { return }
+
     Task { @MainActor in
-        manager.refreshDisplays()
+        if flags.intersection([.addFlag, .removeFlag]).isEmpty {
+            // Mode or main-display change: refresh mode info for existing displays only.
+            manager.refreshExistingDisplayModes()
+        } else {
+            manager.refreshDisplays()
+        }
+
+        // Auto-rearrange after any display config change completes (debounced 500 ms).
+        manager.scheduleAutoArrange()
     }
 }
 
@@ -26,6 +38,9 @@ class DisplayManager: ObservableObject {
     // nonisolated(unsafe) allows deinit (which is nonisolated in Swift 6) to access this value.
     nonisolated(unsafe) private var callbackContext: UnsafeMutableRawPointer?
 
+    /// Work item used to debounce auto-arrange calls triggered by display config changes.
+    private var autoArrangeWorkItem: DispatchWorkItem?
+
     init() {
         refreshDisplays()
         setupReconfigCallback()
@@ -34,51 +49,148 @@ class DisplayManager: ObservableObject {
     deinit {
         if let ctx = callbackContext {
             CGDisplayRemoveReconfigurationCallback(displayReconfigCallback, ctx)
+            Unmanaged<DisplayManager>.fromOpaque(ctx).release()
         }
     }
 
     func refreshDisplays() {
-        var displayIDs = [CGDirectDisplayID](repeating: 0, count: 16)
         var displayCount: UInt32 = 0
-        CGGetOnlineDisplayList(16, &displayIDs, &displayCount)
+        CGGetOnlineDisplayList(0, nil, &displayCount)
+        var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
+        CGGetOnlineDisplayList(displayCount, &displayIDs, &displayCount)
 
-        let newDisplays = (0..<Int(displayCount)).map { i in
-            DisplayInfo(displayID: displayIDs[i])
+        let currentIDs = Set(displays.map { $0.displayID })
+        let newIDSet = Set((0..<Int(displayCount)).map { displayIDs[$0] })
+
+        // Clean up DDC cache for removed displays to prevent stale entries accumulating
+        let removedIDs = currentIDs.subtracting(newIDSet)
+        removedIDs.forEach {
+            DDCService.shared.clearCache(for: $0)
+            BrightnessService.shared.invalidateDDCState(for: $0)
         }
-        displays = newDisplays
-        DisplayManagerAccessor.shared.displays = newDisplays
 
-        for display in newDisplays {
+        // Diff-based refresh: keep existing DisplayInfo objects (preserves @Published state)
+        var existingByID = Dictionary(uniqueKeysWithValues: displays.map { ($0.displayID, $0) })
+
+        var updatedDisplays: [DisplayInfo] = []
+        var addedDisplays: [DisplayInfo] = []
+
+        for i in 0..<Int(displayCount) {
+            let id = displayIDs[i]
+            if let existing = existingByID[id] {
+                updatedDisplays.append(existing)
+            } else {
+                let info = DisplayInfo(displayID: id)
+                updatedDisplays.append(info)
+                addedDisplays.append(info)
+            }
+        }
+
+        displays = updatedDisplays
+        DisplayManagerAccessor.shared.displays = updatedDisplays
+
+        // Regenerate built-in presets (HiDPI 模式 / 原生模式) from updated display list.
+        PresetService.shared.refreshBuiltins()
+
+        // Only load details / refresh brightness for newly appeared displays
+        for display in addedDisplays {
             Task { await BrightnessService.shared.refreshBrightness(for: display) }
-            Task { await display.loadDetails() }
+            Task {
+                await display.loadDetails()
+                PresetService.shared.refreshBuiltins()
+            }
+            // Restore saved gamma/software-brightness adjustments for the reconnected display.
+            // Brief delay lets WindowServer settle before we write transfer tables.
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                BrightnessService.shared.reapplySoftwareBrightnessIfNeeded(for: display)
+                GammaService.shared.reapplyIfNeeded(for: display.displayID)
+            }
+        }
+
+        // For displays that were already present, only update bounds/main flag (no DDC probe).
+        let keptIDs = currentIDs.intersection(newIDSet)
+        for display in updatedDisplays where keptIDs.contains(display.displayID) {
+            display.bounds = CGDisplayBounds(display.displayID)
+            display.isMain = CGDisplayIsMain(display.displayID) != 0
         }
     }
 
+    /// Debounces calls to `arrangeExternalAboveBuiltin()` — coalesces bursts of config-change
+    /// callbacks into a single rearrange that fires 500 ms after the last callback arrives.
+    func scheduleAutoArrange() {
+        autoArrangeWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.arrangeExternalAboveBuiltin()
+        }
+        autoArrangeWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
+    }
+
     private func setupReconfigCallback() {
-        let ctx = Unmanaged.passUnretained(self).toOpaque()
+        let ctx = Unmanaged.passRetained(self).toOpaque()
         callbackContext = ctx
         CGDisplayRegisterReconfigurationCallback(displayReconfigCallback, ctx)
     }
 
+    /// Refreshes mode info and main-display flag for already-tracked displays
+    /// (for setModeFlag / setMainFlag events).
+    /// Cheaper than a full `refreshDisplays()` — does not add/remove DisplayInfo objects.
+    func refreshExistingDisplayModes() {
+        for display in displays {
+            // Always refresh isMain synchronously since it's cheap and needed for setMainFlag events.
+            display.isMain = CGDisplayIsMain(display.displayID) != 0
+            Task {
+                let newMode = await Task.detached(priority: .userInitiated) {
+                    DisplayMode.currentMode(for: display.displayID)
+                }.value
+                display.currentDisplayMode = newMode
+            }
+        }
+    }
+
     /// Toggle a display on/off.
-    func toggleDisplay(_ display: DisplayInfo) {
-        display.isEnabled.toggle()
-
-        if display.isBuiltin {
-            // Phase 2 will implement real brightness control for built-in display
-            return
-        }
-
-        if display.isEnabled {
-            CGDisplayRelease(display.displayID)
-        } else {
-            CGDisplayCapture(display.displayID)
-        }
+    /// NOTE: macOS has no public API for enabling/disabling individual displays
+    /// (CGConfigureDisplayEnabled is private). This function always returns false
+    /// to signal to callers that the operation is not supported.
+    @discardableResult
+    func toggleDisplay(_ display: DisplayInfo) -> Bool {
+        // No-op: cannot enable/disable displays via public API
+        return false
     }
 
     /// Makes the target display the main display by repositioning it to origin (0, 0).
     func setAsMainDisplay(_ display: DisplayInfo) {
-        let ok = ArrangementService.shared.setAsMainDisplay(display.displayID, among: displays)
-        if ok { refreshDisplays() }
+        Task { @MainActor in
+            let ok = await ArrangementService.shared.setAsMainDisplay(display.displayID, among: self.displays)
+            if ok { self.refreshDisplays() }
+        }
+    }
+
+    /// Positions all external displays above the built-in display, centered horizontally.
+    /// Controlled by the UserDefaults key `fd.arrangement.externalAbove`.
+    /// Does nothing if there is no built-in display or no external displays.
+    func arrangeExternalAboveBuiltin() {
+        guard UserDefaults.standard.bool(forKey: "fd.arrangement.externalAbove") else { return }
+
+        guard let builtin = displays.first(where: { $0.isBuiltin }) else { return }
+        let externals = displays.filter { !$0.isBuiltin }
+        guard !externals.isEmpty else { return }
+
+        let builtinX = Int(builtin.bounds.origin.x)
+        let builtinY = Int(builtin.bounds.origin.y)
+        let builtinWidth = Int(builtin.bounds.width)
+
+        let arrangeItems = externals.map { ext in
+            let extWidth = Int(ext.bounds.width)
+            let centeredX = builtinX + (builtinWidth - extWidth) / 2
+            return (id: ext.displayID, x: centeredX, y: builtinY - Int(ext.bounds.height))
+        }
+        Task { @MainActor in
+            for item in arrangeItems {
+                await ArrangementService.shared.setPosition(x: item.x, y: item.y, for: item.id)
+            }
+            self.refreshDisplays()
+        }
     }
 }

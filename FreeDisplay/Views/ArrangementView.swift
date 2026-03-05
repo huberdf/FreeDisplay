@@ -7,6 +7,7 @@ struct ArrangementView: View {
     @EnvironmentObject var displayManager: DisplayManager
     @State private var draggedID: CGDirectDisplayID?
     @State private var dragOffset: CGSize = .zero
+    @State private var dragError: String?
 
     private let canvasHeight: CGFloat = 160
 
@@ -29,21 +30,36 @@ struct ArrangementView: View {
             }
             .frame(height: canvasHeight)
 
+            // Drag error feedback
+            if let err = dragError {
+                Text(err)
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 4)
+                    .transition(.opacity)
+            }
+
             // "Set as main display" for non-main displays
             ForEach(displayManager.displays.filter { !$0.isMain }) { display in
                 Button(action: {
-                    let ok = ArrangementService.shared.setAsMainDisplay(
-                        display.displayID,
-                        among: displayManager.displays
-                    )
-                    if ok { displayManager.refreshDisplays() }
+                    Task { @MainActor in
+                        let ok = await ArrangementService.shared.setAsMainDisplay(
+                            display.displayID,
+                            among: displayManager.displays
+                        )
+                        if ok { displayManager.refreshDisplays() }
+                    }
                 }) {
-                    Label("将 \(display.name) 设为主显示器", systemImage: "star.fill")
+                    Label("设 \(display.name) 为主显示器", systemImage: "star.fill")
                         .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.blue.opacity(0.1))
                         .foregroundColor(.blue)
+                        .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
-                .padding(.leading, 4)
+                .help("将此显示器设为主显示器")
             }
         }
         .padding(.horizontal, 8)
@@ -62,6 +78,7 @@ struct ArrangementView: View {
                     x: rect.midX + (isDragged ? dragOffset.width : 0),
                     y: rect.midY + (isDragged ? dragOffset.height : 0)
                 )
+                .help("显示器：\(display.name)")
                 .gesture(
                     DragGesture()
                         .onChanged { value in
@@ -140,8 +157,19 @@ struct ArrangementView: View {
         let newX = Int(display.bounds.origin.x) + deltaX
         let newY = Int(display.bounds.origin.y) + deltaY
 
-        let ok = ArrangementService.shared.setPosition(x: newX, y: newY, for: display.displayID)
-        if ok { displayManager.refreshDisplays() }
+        Task { @MainActor in
+            let ok = await ArrangementService.shared.setPosition(x: newX, y: newY, for: display.displayID)
+            if ok {
+                displayManager.refreshDisplays()
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    dragError = "显示器排列失败，请重试"
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    withAnimation { self.dragError = nil }
+                }
+            }
+        }
     }
 }
 
@@ -153,26 +181,56 @@ private struct DisplayThumbnailView: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(display.isMain ? Color.blue.opacity(0.6) : Color.blue.opacity(0.35))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3)
-                        .stroke(Color.blue.opacity(isDragged ? 1.0 : 0.7), lineWidth: isDragged ? 2 : 1)
+            // 背景填充
+            RoundedRectangle(cornerRadius: 4)
+                .fill(
+                    display.isBuiltin
+                    ? AnyShapeStyle(LinearGradient(
+                        colors: [.blue.opacity(0.75), .purple.opacity(0.65)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                    : AnyShapeStyle(Color(NSColor.controlBackgroundColor))
                 )
-            VStack(spacing: 1) {
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(
+                            isDragged ? Color.accentColor : (display.isMain ? Color.accentColor.opacity(0.6) : Color.gray.opacity(0.4)),
+                            lineWidth: isDragged ? 2 : (display.isMain ? 1.5 : 1)
+                        )
+                )
+
+            // 外接显示器顶部装饰横条（边框感）
+            if !display.isBuiltin {
+                VStack {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(height: 3)
+                    Spacer()
+                }
+                .padding(.horizontal, 3)
+                .padding(.top, 3)
+            }
+
+            // 显示器名称 + 主显示标记
+            VStack(spacing: 2) {
                 Text(display.name)
                     .font(.system(size: 8, weight: .medium))
-                    .foregroundColor(.white)
+                    .foregroundColor(display.isBuiltin ? .white : .primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if display.isMain {
-                    Text("主")
-                        .font(.system(size: 6))
-                        .foregroundColor(.white.opacity(0.85))
+                    HStack(spacing: 2) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 5))
+                        Text("主")
+                            .font(.system(size: 6))
+                    }
+                    .foregroundColor(display.isBuiltin ? .white.opacity(0.9) : .blue)
                 }
             }
-            .padding(2)
+            .padding(3)
         }
-        .shadow(radius: isDragged ? 4 : 0)
+        .scaleEffect(isDragged ? 1.04 : 1.0)
+        .shadow(color: .black.opacity(isDragged ? 0.3 : 0.05), radius: isDragged ? 6 : 1)
+        .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isDragged)
     }
 }

@@ -2,8 +2,16 @@ import Foundation
 import IOKit
 import CoreGraphics
 
-/// Reads the built-in ambient light sensor via IOKit's AppleLMUController and maps lux → brightness.
-/// When enabled, it periodically polls the sensor and adjusts display brightness through BrightnessService.
+// CoreDisplay private API — reads the user-set brightness of a display (0.0–1.0).
+// Loaded via dlsym at runtime to avoid linking against the private CoreDisplay framework.
+private let _CoreDisplay_GetBrightness: (@convention(c) (CGDirectDisplayID) -> Double)? = {
+    guard let handle = dlopen("/System/Library/Frameworks/CoreDisplay.framework/CoreDisplay", RTLD_LAZY) else { return nil }
+    guard let sym = dlsym(handle, "CoreDisplay_Display_GetUserBrightness") else { return nil }
+    return unsafeBitCast(sym, to: (@convention(c) (CGDirectDisplayID) -> Double).self)
+}()
+
+/// Reads the built-in display's brightness (which macOS auto-adjusts based on ambient light)
+/// and syncs it to external displays. This avoids needing Intel-only LMU hardware access.
 @MainActor
 final class AutoBrightnessService: ObservableObject, @unchecked Sendable {
     static let shared = AutoBrightnessService()
@@ -24,80 +32,75 @@ final class AutoBrightnessService: ObservableObject, @unchecked Sendable {
         }
     }
 
-    /// 0.0 – 1.0. Higher = faster / more aggressive adjustment.
-    @Published var sensitivity: Double = 0.5 {
+    /// Multiplier 0.5–1.5. Applied to builtin brightness when syncing to external displays.
+    @Published var sensitivity: Double = 1.0 {
         didSet { savePrefs() }
     }
 
-    /// Last raw lux reading (0 = unavailable / no sensor).
-    @Published private(set) var lastLux: Double = 0
+    /// Last builtin brightness reading (0.0–1.0). 0 = unavailable / no builtin display.
+    @Published private(set) var builtinBrightness: Double = 0
+    private var lastAppliedBrightness: Double = -1
+
+    /// Set to true after the first poll attempt completes (success or failure).
+    /// Used by the UI to distinguish "not polled yet" from "no builtin display found".
+    @Published private(set) var hasPolled: Bool = false
 
     // MARK: - Private
 
     private var pollingTask: Task<Void, Never>?
     private let pollingInterval: TimeInterval = 2.0  // seconds
 
-    // MARK: - Ambient Light Sensor
+    // MARK: - Builtin Brightness
 
-    /// Reads the ambient light from AppleLMUController.
-    /// Returns the average of left+right sensor channels, or nil if not available.
-    nonisolated func readAmbientLux() -> Double? {
-        let service = IOServiceGetMatchingService(
-            kIOMainPortDefault,
-            IOServiceMatching("AppleLMUController")
-        )
-        guard service != IO_OBJECT_NULL else { return nil }
-        defer { IOObjectRelease(service) }
+    /// Reads the current brightness of the builtin display.
+    /// Returns a value in 0.0–1.0, or nil if no builtin display is found.
+    /// Safe to call from a background thread.
+    nonisolated func readBuiltinBrightness() -> Double? {
+        var displayCount: UInt32 = 0
+        CGGetActiveDisplayList(0, nil, &displayCount)
+        guard displayCount > 0 else { return nil }
 
-        var dataPort: io_connect_t = 0
-        guard IOServiceOpen(service, mach_task_self_, 0, &dataPort) == KERN_SUCCESS else { return nil }
-        defer { IOServiceClose(dataPort) }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
+        CGGetActiveDisplayList(displayCount, &displays, &displayCount)
 
-        // Selector 0 returns two UInt64 ambient light sensor values (left and right).
-        var outputCount: UInt32 = 2
-        var output: [UInt64] = [0, 0]
-        var outputStructSize: Int = 0
-        let kr = IOConnectCallMethod(
-            dataPort,
-            0,          // selector
-            nil, 0,     // input scalars (none)
-            nil, 0,     // input struct (none)
-            &output, &outputCount,
-            nil, &outputStructSize  // output struct (none)
-        )
-        guard kr == KERN_SUCCESS, outputCount >= 2 else { return nil }
+        guard let builtinID = displays.first(where: { CGDisplayIsBuiltin($0) != 0 }) else {
+            return nil
+        }
 
-        // Values are raw sensor counts. Average both channels, then scale to approximate lux.
-        let rawAvg = Double(output[0] + output[1]) / 2.0
-        // Scale factor is empirical; Apple uses 0.0001-ish internally on some models.
-        let lux = rawAvg / 1_000_000.0 * 1_000.0  // rough mapping to 0–1000 lux range
-        return max(0, lux)
-    }
+        // Try CoreDisplay private API first.
+        let value = _CoreDisplay_GetBrightness?(builtinID) ?? 0
+        if value > 0 {
+            return min(1.0, max(0.0, value))
+        }
 
-    // MARK: - Brightness Mapping
+        // Fallback: IODisplayGetFloatParameter via IOKit service matching
+        var iter: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IODisplayConnect"), &iter) == KERN_SUCCESS else {
+            return nil
+        }
+        defer { IOObjectRelease(iter) }
+        var service = IOIteratorNext(iter)
+        while service != IO_OBJECT_NULL {
+            defer { IOObjectRelease(service); service = IOIteratorNext(iter) }
+            var floatValue: Float = 0
+            let kr = IODisplayGetFloatParameter(service, 0, kIODisplayBrightnessKey as CFString, &floatValue)
+            if kr == KERN_SUCCESS && floatValue > 0 {
+                return min(1.0, max(0.0, Double(floatValue)))
+            }
+        }
 
-    /// Maps ambient lux to a target brightness percentage [0, 100].
-    /// Uses a logarithmic curve; sensitivity shifts the curve offset.
-    func luxToBrightness(_ lux: Double) -> Double {
-        guard lux > 0 else { return max(5.0, 20.0 - sensitivity * 15.0) }
-
-        // log scale: log10(1) = 0 → 0% dark,  log10(1000) = 3 → 100% bright
-        let logLux = log10(lux + 1.0) / log10(1001.0)   // normalise to [0, 1]
-        // sensitivity shifts midpoint: 0 = compressed low end, 1 = expanded low end
-        let adjusted = pow(logLux, 1.0 - sensitivity * 0.6)
-        let brightness = max(5.0, min(100.0, adjusted * 100.0))
-        return brightness
+        return nil
     }
 
     // MARK: - Polling
 
     private func startPolling() {
         stopPolling()
-        pollingTask = Task {
+        pollingTask = Task.detached { [weak self] in
+            guard let self else { return }
             while !Task.isCancelled {
-                if let lux = self.readAmbientLux() {
-                    await self.applyBrightness(lux: lux)
-                }
+                let brightness = self.readBuiltinBrightness()
+                await self.applyBrightness(builtin: brightness)
                 try? await Task.sleep(nanoseconds: UInt64(self.pollingInterval * 1_000_000_000))
             }
         }
@@ -109,26 +112,39 @@ final class AutoBrightnessService: ObservableObject, @unchecked Sendable {
     }
 
     @MainActor
-    private func applyBrightness(lux: Double) {
-        lastLux = lux
-        let targetBrightness = luxToBrightness(lux)
+    private func applyBrightness(builtin: Double?) async {
+        builtinBrightness = builtin ?? 0
+        hasPolled = true
 
-        // Apply to all active displays
-        let displays = DisplayManagerAccessor.shared.displays
-        for display in displays {
-            // Only adjust if the difference is meaningful (avoid micro-jitter)
+        guard let builtin, builtin > 0 else { return }
+
+        // Only apply if builtin brightness changed more than 2% since last application.
+        guard abs(builtin - lastAppliedBrightness) >= 0.02 else { return }
+
+        // Respect 30-second cooldown after a manual brightness adjustment.
+        if let last = BrightnessService.shared.lastManualAdjustDate,
+           Date().timeIntervalSince(last) < 30.0 {
+            return
+        }
+
+        let targetPercentage = min(100.0, max(0.0, builtin * sensitivity * 100.0))
+
+        let snapshot = DisplayManagerAccessor.shared.displays
+        for display in snapshot {
+            // Only sync to external (non-builtin) displays.
+            guard !display.isBuiltin else { continue }
             let current = display.brightness
-            if abs(current - targetBrightness) >= 2.0 {
-                BrightnessService.shared.setBrightness(targetBrightness, for: display)
-                display.brightness = targetBrightness
+            if abs(current - targetPercentage) >= 2.0 {
+                await BrightnessService.shared.setBrightness(targetPercentage, for: display, isAutoAdjust: true)
             }
         }
+        lastAppliedBrightness = builtin
     }
 
     // MARK: - Persistence
 
-    private let enabledKey = "AutoBrightnessEnabled"
-    private let sensitivityKey = "AutoBrightnessSensitivity"
+    private let enabledKey = "fd.AutoBrightnessEnabled"
+    private let sensitivityKey = "fd.AutoBrightnessSensitivity"
 
     private func loadPrefs() {
         isEnabled = UserDefaults.standard.bool(forKey: enabledKey)
@@ -147,7 +163,7 @@ final class AutoBrightnessService: ObservableObject, @unchecked Sendable {
 
 /// Thin wrapper so AutoBrightnessService can reach displays without a direct EnvironmentObject.
 @MainActor
-final class DisplayManagerAccessor: ObservableObject {
+final class DisplayManagerAccessor {
     static let shared = DisplayManagerAccessor()
     var displays: [DisplayInfo] = []
     private init() {}
