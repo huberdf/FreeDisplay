@@ -54,7 +54,7 @@ struct BrightnessSliderView: View {
                 Slider(value: $localBrightness, in: 5...100, step: 1) { editing in
                     isDragging = editing
                     if !editing {
-                        // Drag ended — always apply final value and show highlight.
+                        // Drag ended — apply final value with smooth transition and show highlight.
                         withAnimation(.easeOut(duration: 0.3)) { valueHighlighted = true }
                         highlightTask?.cancel()
                         highlightTask = Task { @MainActor in
@@ -62,8 +62,8 @@ struct BrightnessSliderView: View {
                             withAnimation(.easeOut(duration: 0.3)) { valueHighlighted = false }
                         }
                         Task { @MainActor in
-                            display.brightness = localBrightness
-                            await BrightnessService.shared.setBrightness(localBrightness, for: display)
+                            // Use smooth transition from current hardware brightness to slider value.
+                            BrightnessService.shared.setBrightnessSmooth(localBrightness, for: display)
                             updateDDCStatus()
                         }
                         lastDDCWrite = Date()
@@ -170,11 +170,10 @@ struct CombinedBrightnessView: View {
                 Slider(value: $combinedBrightness, in: 5...100, step: 1) { editing in
                     isDragging = editing
                     if !editing {
-                        // Drag ended — flush final value to all displays.
+                        // Drag ended — flush final value to all displays with smooth transition.
                         Task { @MainActor in
                             for display in displays {
-                                display.brightness = combinedBrightness
-                                await BrightnessService.shared.setBrightness(combinedBrightness, for: display)
+                                BrightnessService.shared.setBrightnessSmooth(combinedBrightness, for: display)
                             }
                         }
                         lastDDCWrite = Date()

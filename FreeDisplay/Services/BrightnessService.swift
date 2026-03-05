@@ -6,11 +6,96 @@ import CoreGraphics
 @_silgen_name("CGDisplayIOServicePort")
 private func CGDisplayIOServicePort(_ display: CGDirectDisplayID) -> io_service_t
 
+// MARK: - BrightnessAnimator
+
+/// Manages smooth brightness transitions for a single display.
+/// Cancels any in-progress animation when a new one starts, so rapid presses stay responsive.
+/// All methods must be called on the main thread.
+final class BrightnessAnimator: @unchecked Sendable {
+    private var timer: Timer?
+    private var currentStep: Int = 0
+    private var totalSteps: Int = 0
+    private var startValue: Double = 0
+    private var targetValue: Double = 0
+    private var stepHandler: ((Double, Bool) -> Void)?
+
+    /// Cancel any running animation immediately.
+    func cancel() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    /// Animate from `from` to `to` over `duration` seconds using `steps` discrete steps.
+    /// `handler(value, isLast)` is called once per step on the main thread.
+    /// Calling this cancels any previously running animation.
+    func animate(
+        from: Double,
+        to: Double,
+        steps: Int,
+        duration: TimeInterval,
+        handler: @escaping (Double, Bool) -> Void
+    ) {
+        cancel()
+
+        // If from ≈ to, no animation needed — just apply final value.
+        guard abs(to - from) > 0.001, steps > 1 else {
+            handler(to, true)
+            return
+        }
+
+        let clampedSteps = max(2, steps)
+        currentStep = 0
+        totalSteps = clampedSteps
+        startValue = from
+        targetValue = to
+        stepHandler = handler
+        let interval = duration / Double(clampedSteps)
+
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            self.currentStep += 1
+            let progress = Double(self.currentStep) / Double(self.totalSteps)
+            // Ease-out curve: smoother deceleration at the end
+            let eased = 1.0 - pow(1.0 - progress, 2.0)
+            let value = self.startValue + (self.targetValue - self.startValue) * eased
+            let isLast = self.currentStep >= self.totalSteps
+            if isLast {
+                t.invalidate()
+                self.timer = nil
+            }
+            // Always pass the exact target on the last step to avoid floating-point drift.
+            self.stepHandler?(isLast ? self.targetValue : value, isLast)
+            if isLast { self.stepHandler = nil }
+        }
+    }
+}
+
+// MARK: - BrightnessService
+
 final class BrightnessService: @unchecked Sendable {
     static let shared = BrightnessService()
     private init() {}
 
     private let queue = DispatchQueue(label: "com.freedisplay.brightness", qos: .userInitiated)
+
+    // MARK: - Per-display Animators (main thread only)
+
+    /// One animator per display. Accessed only on the main thread.
+    private var animators: [CGDirectDisplayID: BrightnessAnimator] = [:]
+
+    private func animator(for displayID: CGDirectDisplayID) -> BrightnessAnimator {
+        if let existing = animators[displayID] { return existing }
+        let a = BrightnessAnimator()
+        animators[displayID] = a
+        return a
+    }
+
+    /// Cancel any running brightness animation for a display.
+    /// Call this before starting an instant (non-animated) change.
+    @MainActor
+    func cancelAnimation(for displayID: CGDirectDisplayID) {
+        animators[displayID]?.cancel()
+    }
 
     // MARK: - Manual Adjust Cooldown
 
@@ -161,6 +246,89 @@ final class BrightnessService: @unchecked Sendable {
                     #if DEBUG
                     print("[BrightnessService] DDC unavailable for display \(displayID), using software fallback")
                     #endif
+                }
+            }
+        }
+    }
+
+    // MARK: - Smooth Brightness Transitions
+
+    /// Animate brightness from the display's current value to `targetBrightness` smoothly.
+    ///
+    /// - For DDC displays: sends 5 DDC commands spaced ~40ms apart (200ms total).
+    ///   DDC I2C commands are inherently slow (~40–50ms each), so 5 steps at 40ms intervals
+    ///   fills the 200ms window without flooding the bus.
+    /// - For software (gamma) brightness: 8 gamma table updates over 200ms give a visibly
+    ///   smooth fade without perceptible frame drops.
+    /// - For built-in displays: 8 IOKit writes over 200ms mirror the software path.
+    ///
+    /// Cancels any previously running animation for the same display, so rapid key presses
+    /// always feel responsive — the animation re-targets from wherever it currently is.
+    @MainActor
+    func setBrightnessSmooth(
+        _ targetBrightness: Double,
+        for display: DisplayInfo,
+        isAutoAdjust: Bool = false
+    ) {
+        let clamped = max(0.0, min(100.0, targetBrightness))
+        let displayID = display.displayID
+        let fromBrightness = display.brightness
+
+        if !isAutoAdjust {
+            manualAdjustLock.withLock { lastManualAdjustDate = Date() }
+        }
+
+        let anim = animator(for: displayID)
+
+        if display.isBuiltin {
+            // Built-in: use IOKit — 8 steps over 200ms
+            anim.animate(from: fromBrightness, to: clamped, steps: 8, duration: 0.20) { [weak self, weak display] value, _ in
+                guard let self, let display else { return }
+                display.brightness = value
+                let floatVal = Float(value / 100.0)
+                self.queue.async { self.setInternalBrightness(floatVal) }
+            }
+        } else {
+            let currentStatus: Bool? = ddcAvailableLock.withLock { ddcAvailable[displayID] }
+
+            if currentStatus == false {
+                // Software (gamma) path: 8 steps over 200ms
+                anim.animate(from: fromBrightness, to: clamped, steps: 8, duration: 0.20) { [weak display] value, _ in
+                    display?.brightness = value
+                    BrightnessService.shared.setSoftwareBrightness(value, for: displayID)
+                }
+            } else {
+                // DDC path: 5 steps over 200ms.
+                // DDC I2C is slow (~40-50ms per command), so 5 steps at 40ms intervals
+                // keeps the bus from overloading while giving smooth visible steps.
+                let knownMax: UInt16 = ddcAvailableLock.withLock {
+                    ddcMaxBrightness[displayID] ?? 100
+                }
+                anim.animate(from: fromBrightness, to: clamped, steps: 5, duration: 0.20) { [weak self, weak display] value, isLast in
+                    guard let self else { return }
+                    display?.brightness = value
+                    let ddcValue = UInt16((value / 100.0) * Double(knownMax))
+                    // Only send DDC on intermediate steps and the final step.
+                    // If DDC fails on the final step, fall through to software.
+                    DDCService.shared.writeAsync(
+                        displayID: displayID,
+                        command: DDCService.brightnessVCP,
+                        value: ddcValue
+                    ) { [weak self] success in
+                        guard let self else { return }
+                        if success {
+                            self.ddcAvailableLock.withLock { self.ddcAvailable[displayID] = true }
+                        } else if isLast {
+                            // DDC failed — mark unavailable and apply software fallback
+                            self.ddcAvailableLock.withLock { self.ddcAvailable[displayID] = false }
+                            DispatchQueue.main.async { [weak self] in
+                                self?.setSoftwareBrightness(clamped, for: displayID)
+                            }
+                            #if DEBUG
+                            print("[BrightnessService] smooth DDC failed for \(displayID), using software fallback")
+                            #endif
+                        }
+                    }
                 }
             }
         }

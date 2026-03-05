@@ -204,8 +204,8 @@ final class BrightnessKeyService: @unchecked Sendable {
             let displays = DisplayManagerAccessor.shared.displays
             guard let display = displays.first(where: { $0.displayID == displayID }) else { return }
             let newBrightness = max(0.0, min(100.0, display.brightness + step))
-            display.brightness = newBrightness
-            await BrightnessService.shared.setBrightness(newBrightness, for: display)
+            // Use smooth animation — cancels any in-progress animation automatically.
+            BrightnessService.shared.setBrightnessSmooth(newBrightness, for: display)
 
             // Show OSD on the external display where brightness was adjusted.
             if let screen = NSScreen.screens.first(where: {
