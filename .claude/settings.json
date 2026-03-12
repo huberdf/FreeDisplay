@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '⚠️ Remember: rebuild & relaunch FreeDisplay after edits'"
+          }
+        ]
+      }
+    ]
+  }
+}
