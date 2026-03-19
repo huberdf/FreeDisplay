@@ -226,17 +226,21 @@ final class PresetService: ObservableObject, @unchecked Sendable {
         var result: [DisplayPreset] = [nativePreset]
 
         // --- HiDPI 模式 ---
+        // Find the best HiDPI mode for each external display (highest logical resolution)
         let hasExternalWithHiDPI = externals.contains { display in
-            display.availableModes.contains { $0.width == 1920 && $0.height == 1080 && $0.isHiDPI }
+            display.availableModes.contains { $0.isHiDPI }
         }
 
         if hasExternalWithHiDPI {
             let hidpiEntries: [DisplayPresetEntry] = externals.map { display in
-                if let hidpiMode = display.availableModes.first(where: { $0.width == 1920 && $0.height == 1080 && $0.isHiDPI }) {
+                // Pick the highest-resolution HiDPI mode available
+                if let bestHiDPI = display.availableModes
+                    .filter({ $0.isHiDPI })
+                    .max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) {
                     return DisplayPresetEntry(
                         displayUUID: display.displayUUID,
-                        width: hidpiMode.width,
-                        height: hidpiMode.height,
+                        width: bestHiDPI.width,
+                        height: bestHiDPI.height,
                         isHiDPI: true,
                         brightness: nil,
                         arrangementX: nil,

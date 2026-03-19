@@ -79,9 +79,7 @@ struct HiDPIRowView: View {
             Task {
                 // Use the highest available mode as native resolution,
                 // not display.pixelWidth which is the CURRENT resolution
-                let maxMode = display.availableModes.max(by: { $0.width * $0.height < $1.width * $1.height })
-                let nativeW = maxMode?.width ?? display.pixelWidth
-                let nativeH = maxMode?.height ?? display.pixelHeight
+                let (nativeW, nativeH) = display.nativeResolution
                 let err = await HiDPIService.shared.enableHiDPI(
                     for: display.displayID,
                     vendor: display.vendorNumber,

@@ -98,20 +98,8 @@ final class HiDPIService: @unchecked Sendable {
         }
 
         // Use AppleScript to get admin privileges for writing to /Library/Displays/
-        let script = """
-            do shell script "mkdir -p '\(dirPath)' && cp '\(tmpPath)' '\(plistPath)'" with administrator privileges
-            """
-        var error: NSDictionary?
-        guard let appleScript = NSAppleScript(source: script) else {
-            return "创建 AppleScript 失败"
-        }
-        appleScript.executeAndReturnError(&error)
-        if let error = error {
-            let msg = error[NSAppleScript.errorMessage] as? String ?? "未知错误"
-            if msg.contains("canceled") || msg.contains("Cancel") {
-                return "用户取消了授权"
-            }
-            return "管理员授权失败：\(msg)"
+        if let err = executePrivilegedCommand("mkdir -p '\(dirPath)' && cp '\(tmpPath)' '\(plistPath)'") {
+            return err
         }
 
         // Clean up temp file
@@ -127,8 +115,19 @@ final class HiDPIService: @unchecked Sendable {
         let plistPath = overridePlistURL(vendor: vendor, product: product).path
         guard FileManager.default.fileExists(atPath: plistPath) else { return nil }
 
+        if let err = executePrivilegedCommand("rm -f '\(plistPath)'") {
+            return err
+        }
+        return nil
+    }
+
+    // MARK: - Helpers
+
+    /// Executes a shell command with administrator privileges via AppleScript.
+    /// Returns nil on success, or an error message on failure.
+    private func executePrivilegedCommand(_ command: String) -> String? {
         let script = """
-            do shell script "rm -f '\(plistPath)'" with administrator privileges
+            do shell script "\(command)" with administrator privileges
             """
         var error: NSDictionary?
         guard let appleScript = NSAppleScript(source: script) else {
@@ -144,8 +143,6 @@ final class HiDPIService: @unchecked Sendable {
         }
         return nil
     }
-
-    // MARK: - Helpers
 
     private func triggerDisplayReenumeration(vendor: UInt32, product: UInt32) {
         var iterator: io_iterator_t = 0

@@ -97,6 +97,10 @@ class DisplayManager: ObservableObject {
             Task { await BrightnessService.shared.refreshBrightness(for: display) }
             Task {
                 await display.loadDetails()
+                // Auto-enable HiDPI for new external 2K+ displays that don't have it yet
+                if !display.isBuiltin {
+                    await self.autoEnableHiDPIIfNeeded(for: display)
+                }
                 PresetService.shared.refreshBuiltins()
             }
             // Restore saved gamma/software-brightness adjustments for the reconnected display.
@@ -113,6 +117,44 @@ class DisplayManager: ObservableObject {
         for display in updatedDisplays where keptIDs.contains(display.displayID) {
             display.bounds = CGDisplayBounds(display.displayID)
             display.isMain = CGDisplayIsMain(display.displayID) != 0
+        }
+    }
+
+    /// Auto-enables HiDPI plist override for external 2K+ displays that don't have it yet.
+    /// This ensures switching between different monitors "just works" without manual re-enable.
+    private func autoEnableHiDPIIfNeeded(for display: DisplayInfo) async {
+        let vendor = display.vendorNumber
+        let product = display.modelNumber
+        guard vendor != 0, product != 0 else { return }
+
+        // Already enabled — nothing to do
+        guard !HiDPIService.shared.isHiDPIEnabled(vendor: vendor, product: product) else { return }
+
+        // Determine native resolution from available modes
+        let (nativeW, nativeH) = display.nativeResolution
+
+        // Only auto-enable for 2K+ displays (width >= 2560 or total pixels >= 2560*1440)
+        guard nativeW >= 2560 || (nativeW * nativeH >= 2560 * 1440) else { return }
+
+        print("[DisplayManager] Auto-enabling HiDPI for \(display.name) (\(nativeW)×\(nativeH), vendor=\(vendor), product=\(product))")
+
+        let err = await HiDPIService.shared.enableHiDPI(
+            for: display.displayID,
+            vendor: vendor,
+            product: product,
+            nativeWidth: nativeW,
+            nativeHeight: nativeH
+        )
+
+        if let err {
+            print("[DisplayManager] Auto-enable HiDPI failed: \(err)")
+        } else {
+            print("[DisplayManager] Auto-enable HiDPI succeeded, refreshing modes")
+            HiDPIService.shared.refreshModes(for: display)
+            // Give IOServiceRequestProbe time to re-enumerate modes
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await display.loadDetails()
+            PresetService.shared.refreshBuiltins()
         }
     }
 

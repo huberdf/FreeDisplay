@@ -79,6 +79,7 @@ struct MenuBarView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 // 显示器列表
@@ -224,32 +225,42 @@ struct MenuBarView: View {
                     .padding(.horizontal, 8)
                 }
 
-                // 版本号与退出
-                HStack {
-                    Text("FreeDisplay v\(updateService.currentVersion)")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Button(action: {
-                        NSApplication.shared.terminate(nil)
-                    }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "xmark")
-                                .accessibilityHidden(true)
-                            Text("退出")
-                        }
-                        .font(.caption)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(quitHovered ? .red : .secondary)
-                    .onHover { quitHovered = $0 }
-                    .help("退出 FreeDisplay")
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
             }
         }
+
+        Divider().opacity(0.3)
+
+        // 版本号与退出（固定在底部，不随内容滚动）
+        HStack {
+            Text("FreeDisplay v\(updateService.currentVersion)")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+            Spacer()
+            Button(action: {
+                NSApplication.shared.terminate(nil)
+            }) {
+                HStack(spacing: 3) {
+                    Image(systemName: "xmark")
+                        .accessibilityHidden(true)
+                    Text("退出")
+                }
+                .font(.body)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(quitHovered ? Color.primary.opacity(0.06) : .clear)
+                .cornerRadius(6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(quitHovered ? .red : .secondary)
+            .onHover { quitHovered = $0 }
+            .help("退出 FreeDisplay")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+
+        } // end VStack
         .frame(width: 340)
         .frame(maxHeight: 700)
         .padding(.vertical, 8)

@@ -34,6 +34,14 @@ class DisplayInfo: ObservableObject, Identifiable {
         return "v\(vendorNumber)-m\(modelNumber)-s\(serialNumber)"
     }
 
+    /// The native (highest non-HiDPI) resolution, used for HiDPI enablement and presets.
+    var nativeResolution: (width: Int, height: Int) {
+        let nativeMode = availableModes
+            .filter { !$0.isHiDPI }
+            .max(by: { ($0.width * $0.height) < ($1.width * $1.height) })
+        return (nativeMode?.width ?? pixelWidth, nativeMode?.height ?? pixelHeight)
+    }
+
     init(displayID: CGDirectDisplayID) {
         self.displayID = displayID
         let builtin = CGDisplayIsBuiltin(displayID) != 0
