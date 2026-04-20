@@ -64,7 +64,7 @@ class DisplayInfo: ObservableObject, Identifiable {
         self.serialNumber = CGDisplaySerialNumber(displayID)
 
         if builtin {
-            self.name = "内建显示屏"
+            self.name = String(localized: "内建显示屏")
         } else {
             self.name = NSScreen.screen(for: displayID)?.localizedName ?? "Display \(displayID)"
         }

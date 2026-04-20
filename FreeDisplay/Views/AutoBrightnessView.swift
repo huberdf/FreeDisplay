@@ -39,11 +39,11 @@ struct AutoBrightnessView: View {
 
     private var statusText: String {
         if builtinUnavailable {
-            return "未检测到内建显示屏"
+            return String(localized: "未检测到内建显示屏")
         } else if service.isEnabled {
-            return "跟随内建屏亮度同步中"
+            return String(localized: "跟随内建屏亮度同步中")
         } else {
-            return "跟随内建屏亮度调整外接显示器"
+            return String(localized: "跟随内建屏亮度调整外接显示器")
         }
     }
 }

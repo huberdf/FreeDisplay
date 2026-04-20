@@ -192,7 +192,7 @@ struct ImageAdjustmentView: View {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
                     .font(.caption)
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.caption)
             }
             .padding(.horizontal, 8)
@@ -256,7 +256,7 @@ private struct AdjustRow: View {
                 .frame(width: 18)
                 .font(.caption)
 
-            Text(label)
+            Text(LocalizedStringKey(label))
                 .font(.caption)
                 .frame(width: 72, alignment: .leading)
 

@@ -86,7 +86,7 @@ final class HiDPIService: @unchecked Sendable {
         ]
 
         guard let data = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) else {
-            return "生成 Plist 数据失败"
+            return String(localized: "生成 Plist 数据失败")
         }
 
         // Write to a temp file first, then use privileged helper to move it
@@ -94,7 +94,7 @@ final class HiDPIService: @unchecked Sendable {
         do {
             try data.write(to: URL(fileURLWithPath: tmpPath), options: .atomic)
         } catch {
-            return "写入临时文件失败：\(error.localizedDescription)"
+            return String(localized: "写入临时文件失败：\(error.localizedDescription)")
         }
 
         // Use AppleScript to get admin privileges for writing to /Library/Displays/
@@ -131,15 +131,15 @@ final class HiDPIService: @unchecked Sendable {
             """
         var error: NSDictionary?
         guard let appleScript = NSAppleScript(source: script) else {
-            return "创建 AppleScript 失败"
+            return String(localized: "创建 AppleScript 失败")
         }
         appleScript.executeAndReturnError(&error)
         if let error = error {
-            let msg = error[NSAppleScript.errorMessage] as? String ?? "未知错误"
+            let msg = error[NSAppleScript.errorMessage] as? String ?? String(localized: "未知错误")
             if msg.contains("canceled") || msg.contains("Cancel") {
-                return "用户取消了授权"
+                return String(localized: "用户取消了授权")
             }
-            return "管理员授权失败：\(msg)"
+            return String(localized: "管理员授权失败：\(msg)")
         }
         return nil
     }

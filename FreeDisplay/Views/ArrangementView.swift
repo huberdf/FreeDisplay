@@ -163,7 +163,7 @@ struct ArrangementView: View {
                 displayManager.refreshDisplays()
             } else {
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    dragError = "显示器排列失败，请重试"
+                    dragError = String(localized: "显示器排列失败，请重试")
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     withAnimation { self.dragError = nil }

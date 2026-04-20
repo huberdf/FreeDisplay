@@ -131,7 +131,7 @@ struct ResolutionSliderView: View {
                 errorMessage = nil
             } else {
                 syncSliderToCurrentMode()
-                errorMessage = "切换失败，请重试"
+                errorMessage = String(localized: "切换失败，请重试")
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                     errorMessage = nil
