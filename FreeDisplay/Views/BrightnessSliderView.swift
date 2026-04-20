@@ -35,7 +35,13 @@ struct BrightnessSliderView: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 2)
-            .accessibilityLabel(display.isBuiltin ? "亮度控制模式：系统" : "亮度控制模式：\(ddcStatus == true ? "DDC 硬件" : "软件模拟")")
+            .accessibilityLabel(
+                display.isBuiltin
+                    ? String(localized: "亮度控制模式：系统")
+                    : (ddcStatus == true
+                        ? String(localized: "亮度控制模式：DDC 硬件")
+                        : String(localized: "亮度控制模式：软件模拟"))
+            )
             .help(display.isBuiltin ? "系统亮度：通过系统 API 控制内建显示屏亮度" : "DDC: 硬件直接控制亮度\n软件: 通过软件调节亮度")
 
             HStack(spacing: 6) {
@@ -97,7 +103,9 @@ struct BrightnessSliderView: View {
                     .accessibilityHidden(true)
 
                 let brightnessLabel: String = {
-                    if ddcStatus == false { return "软件 \(Int(localBrightness))%" }
+                    if ddcStatus == false {
+                        return "\(String(localized: "软件")) \(Int(localBrightness))%"
+                    }
                     return "\(Int(localBrightness))%"
                 }()
                 Text(brightnessLabel)

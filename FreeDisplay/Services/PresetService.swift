@@ -217,7 +217,7 @@ final class PresetService: ObservableObject, @unchecked Sendable {
         }
 
         var nativePreset = DisplayPreset(
-            name: "原生模式",
+            name: String(localized: "原生模式"),
             icon: "rectangle.on.rectangle",
             displays: nativeEntries
         )
@@ -262,7 +262,7 @@ final class PresetService: ObservableObject, @unchecked Sendable {
                 }
             }
             var hidpiPreset = DisplayPreset(
-                name: "HiDPI 模式",
+                name: String(localized: "HiDPI 模式"),
                 icon: "sparkles",
                 displays: hidpiEntries
             )

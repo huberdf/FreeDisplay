@@ -132,7 +132,7 @@ struct ColorProfileView: View {
                     applySuccess = false
                 }
             } else {
-                applyError = "应用失败，请重试"
+                applyError = String(localized: "应用失败，请重试")
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                     applyError = nil
@@ -145,7 +145,7 @@ struct ColorProfileView: View {
 // MARK: - Sub-views
 
 private struct SectionBadge: View {
-    let title: String
+    let title: LocalizedStringKey
 
     var body: some View {
         Text(title)

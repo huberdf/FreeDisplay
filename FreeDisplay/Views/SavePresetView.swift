@@ -156,7 +156,7 @@ struct IconOptionButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .help(label)
-        .accessibilityLabel(label)
+        .help(LocalizedStringKey(label))
+        .accessibilityLabel(LocalizedStringKey(label))
     }
 }

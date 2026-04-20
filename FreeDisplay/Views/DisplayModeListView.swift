@@ -162,7 +162,7 @@ struct DisplayModeListView: View {
                 errorMessage = nil
             } else {
                 withAnimation {
-                    errorMessage = "无法切换到 \(mode.resolutionString)，请重试"
+                    errorMessage = String(localized: "无法切换到 \(mode.resolutionString)，请重试")
                 }
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -372,7 +372,7 @@ private struct RatePill: View {
 // MARK: - TagBadge
 
 private struct TagBadge: View {
-    let text: String
+    let text: LocalizedStringKey
     let color: Color
 
     var body: some View {

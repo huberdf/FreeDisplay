@@ -29,7 +29,7 @@ struct ExpandableRow: View {
     var body: some View {
         HStack {
             MenuItemIcon(systemName: icon, color: iconColor)
-            Text(label).font(.body)
+            Text(LocalizedStringKey(label)).font(.body)
             Spacer()
             if let sub = subtitle, !sub.isEmpty {
                 Text(sub)

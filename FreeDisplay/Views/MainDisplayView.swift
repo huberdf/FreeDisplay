@@ -38,7 +38,7 @@ struct MainDisplayView: View {
                             among: displayManager.displays
                         )
                         if !success {
-                            errorMessage = "设置主显示屏失败"
+                            errorMessage = String(localized: "设置主显示屏失败")
                             Task { @MainActor in
                                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                                 errorMessage = nil

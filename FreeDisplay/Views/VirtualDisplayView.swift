@@ -59,7 +59,7 @@ struct VirtualDisplayView: View {
                         if success {
                             showCreateForm = false
                         } else {
-                            createError = "虚拟显示器创建失败，请重试"
+                            createError = String(localized: "虚拟显示器创建失败，请重试")
                             Task { @MainActor in
                                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                                 createError = nil

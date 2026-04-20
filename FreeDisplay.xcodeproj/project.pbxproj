@@ -41,6 +41,7 @@
 		94A44781BBE01DF170DF6F64 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11B24C0698CE807BA1E28D0 /* AppDelegate.swift */; };
 		B170F04C4FDA2E9A8D0AD6B0 /* BrightnessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6ED9828FF4F2823DDB03014 /* BrightnessService.swift */; };
 		B3452C06010BEFEEBF0FD1FC /* ResolutionSliderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603658292A824E3A3968A4D7 /* ResolutionSliderView.swift */; };
+		BB9CCFBB898E11E8C9A3EFD4 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 7F1FF58B181661B4CC4B6F85 /* InfoPlist.xcstrings */; };
 		CBC8B0900A104181893B69B2 /* ImageAdjustmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22B3A7EF51E72B078901699 /* ImageAdjustmentView.swift */; };
 		CD3C6687C2B23F46A3678E94 /* NotchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2419A06679F0A55C454EF1F /* NotchView.swift */; };
 		D14D979F3149D232244DD701 /* MainDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4720147B44C6328686440A16 /* MainDisplayView.swift */; };
@@ -48,6 +49,7 @@
 		E061011F318208D7FF94D963 /* CGHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB5BF8AFF876572E97D370A0 /* CGHelpers.swift */; };
 		E201AC4CE5BCEC009C926206 /* ArrangementService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22030BFC8A680A596A5764C9 /* ArrangementService.swift */; };
 		E6D99B12980703693C61A687 /* SettingsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5483CA367C0673369C00E5A /* SettingsService.swift */; };
+		F17E84B38238640BEBC366AA /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E0CF278C47F118CA2F2DDC62 /* Localizable.xcstrings */; };
 		F9A1FF13C0CAC41003C5B201 /* SavePresetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58474F9C406F992241963112 /* SavePresetView.swift */; };
 		FE0FA160B19EA273B4F766CC /* BrightnessSliderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76D8EE5271581552ED081AF /* BrightnessSliderView.swift */; };
 /* End PBXBuildFile section */
@@ -77,6 +79,7 @@
 		7419D1AC41D1C369FFDCD09D /* GammaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GammaService.swift; sourceTree = "<group>"; };
 		754025E6D6152C81F145C63C /* MirrorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorService.swift; sourceTree = "<group>"; };
 		76DF3A1CA21D512F8DC936F9 /* PresetListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetListView.swift; sourceTree = "<group>"; };
+		7F1FF58B181661B4CC4B6F85 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		819474C0E46B105CBBFE7A7F /* HiDPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIService.swift; sourceTree = "<group>"; };
 		87A2686369A9F9969B89376E /* DisplayMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayMode.swift; sourceTree = "<group>"; };
 		90F55D10A5241A8DFA941E4C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -96,6 +99,7 @@
 		D732A8A7009C298C78D6895C /* FreeDisplayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeDisplayApp.swift; sourceTree = "<group>"; };
 		D76D8EE5271581552ED081AF /* BrightnessSliderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessSliderView.swift; sourceTree = "<group>"; };
 		DB5BF8AFF876572E97D370A0 /* CGHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGHelpers.swift; sourceTree = "<group>"; };
+		E0CF278C47F118CA2F2DDC62 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		E5483CA367C0673369C00E5A /* SettingsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsService.swift; sourceTree = "<group>"; };
 		F22B3A7EF51E72B078901699 /* ImageAdjustmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAdjustmentView.swift; sourceTree = "<group>"; };
 		F606C5D467CD44404890F6EC /* VirtualDisplayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplayService.swift; sourceTree = "<group>"; };
@@ -191,6 +195,8 @@
 			isa = PBXGroup;
 			children = (
 				AED959D5249F419ADBDBA1F4 /* Assets.xcassets */,
+				7F1FF58B181661B4CC4B6F85 /* InfoPlist.xcstrings */,
+				E0CF278C47F118CA2F2DDC62 /* Localizable.xcstrings */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -254,16 +260,17 @@
 				};
 			};
 			buildConfigurationList = 8EA410054BD32F42B7BB9BC3 /* Build configuration list for PBXProject "FreeDisplay" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
 				en,
+				"zh-Hans",
 			);
 			mainGroup = AD8C2B4D7F682DFFA53EF6B7;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 4D2DDE7731949C0697A6167C /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -279,6 +286,8 @@
 			files = (
 				80F888F001C7F53E4FA362AD /* Assets.xcassets in Resources */,
 				7BC8C11889A477C6501E5BC8 /* Assets.xcassets in Resources */,
+				BB9CCFBB898E11E8C9A3EFD4 /* InfoPlist.xcstrings in Resources */,
+				F17E84B38238640BEBC366AA /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

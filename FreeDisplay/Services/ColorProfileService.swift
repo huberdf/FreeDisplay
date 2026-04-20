@@ -122,17 +122,17 @@ final class ColorProfileService: @unchecked Sendable {
     /// Returns the human-readable color space name for the given display.
     func currentColorSpaceName(for displayID: CGDirectDisplayID) -> String {
         let colorSpace = CGDisplayCopyColorSpace(displayID)
-        guard let cfName = colorSpace.name else { return "未知" }
+        guard let cfName = colorSpace.name else { return String(localized: "未知") }
         return humanReadable(cfName as String)
     }
 
     /// Returns a description like "内部 (8-bit)" for the display's current color mode.
     func colorModeDescription(for displayID: CGDirectDisplayID) -> String {
-        guard let mode = CGDisplayCopyDisplayMode(displayID) else { return "未知" }
+        guard let mode = CGDisplayCopyDisplayMode(displayID) else { return String(localized: "未知") }
         let encoding: String
         if let cfEnc = mode.pixelEncoding { encoding = cfEnc as String } else { encoding = "" }
         let bpc = bitsPerChannel(from: encoding)
-        let source = CGDisplayIsBuiltin(displayID) != 0 ? "内部" : "外部"
+        let source = CGDisplayIsBuiltin(displayID) != 0 ? String(localized: "内部") : String(localized: "外部")
         return "\(source) (\(bpc)-bit)"
     }
 
