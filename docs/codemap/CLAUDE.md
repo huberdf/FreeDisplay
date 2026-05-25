@@ -48,6 +48,7 @@
 | 新增菜单栏工具入口（非显示器相关） | `Views/MenuBarView.swift`（工具区添加入口）→ 新建 View/Service → `docs/codemap/CLAUDE.md` |
 | 修改分辨率切换逻辑 | `Services/ResolutionService.swift`、`Models/DisplayMode.swift`，测试影响 `Views/ResolutionSliderView.swift` 和 `Views/DisplayModeListView.swift` |
 | 修改亮度读写 | `Services/BrightnessService.swift`，外接屏同步检查 `Services/DDCService.swift` |
+| 修改显示器电源控制 | `Services/DisplayPowerService.swift`、`Services/DisplayConnectionService.swift`、`Views/DisplayPowerView.swift`，外接屏同步检查 `Services/DDCService.swift` 的 VCP 0xD6 |
 | 修改图像调整效果 | `Services/GammaService.swift`（公式/Table 计算）、`Views/ImageAdjustmentView.swift`（UI 滑块映射） |
 | 添加新的持久化设置项 | `Services/SettingsService.swift`（Keys + @Published 属性 + loadAll/persist）→ 相关 View |
 | 修改通知/热插拔响应 | `Services/DisplayManager.swift`（displayReconfigCallback + refreshDisplays） |

@@ -2,6 +2,7 @@ import Foundation
 import IOKit
 import IOKit.graphics
 import CoreGraphics
+import AppKit
 
 @_silgen_name("CGDisplayIOServicePort")
 private func CGDisplayIOServicePort(_ display: CGDirectDisplayID) -> io_service_t
@@ -141,6 +142,73 @@ final class BrightnessService: @unchecked Sendable {
     /// Used to denormalize 0–100% into the display's native DDC range.
     private var ddcMaxBrightness: [CGDirectDisplayID: UInt16] = [:]
 
+    private func displayUUIDString(for displayID: CGDirectDisplayID) -> String? {
+        guard let cfUUID = CGDisplayCreateUUIDFromDisplayID(displayID),
+              let uuid = CFUUIDCreateString(nil, cfUUID.takeRetainedValue()) else {
+            return nil
+        }
+        return uuid as String
+    }
+
+    private func physicalDDCIdentity(for displayID: CGDirectDisplayID) -> String {
+        "v\(CGDisplayVendorNumber(displayID))-m\(CGDisplayModelNumber(displayID))-s\(CGDisplaySerialNumber(displayID))"
+    }
+
+    private func ddcDisabledKeys(for displayID: CGDirectDisplayID) -> [String] {
+        let physical = physicalDDCIdentity(for: displayID)
+        var keys = [
+            "fd.ddc.disabled.physical.\(physical)",
+            "fd.power.powerVCPUnsafe.physical.\(physical)"
+        ]
+        if let uuid = displayUUIDString(for: displayID) {
+            keys.append("fd.ddc.disabled.\(uuid)")
+            keys.append("fd.power.powerVCPUnsafe.\(uuid)")
+            keys.append("fd.power.wakeFailedAfterStandby.\(uuid)")
+        }
+        return keys
+    }
+
+    func isHardwareDDCDisabled(for displayID: CGDirectDisplayID) -> Bool {
+        let defaults = UserDefaults.standard
+        return ddcDisabledKeys(for: displayID).contains { defaults.bool(forKey: $0) }
+    }
+
+    func markHardwareDDCDisabled(for displayID: CGDirectDisplayID, reason: String) {
+        let defaults = UserDefaults.standard
+        let physical = physicalDDCIdentity(for: displayID)
+        defaults.set(true, forKey: "fd.ddc.disabled.physical.\(physical)")
+        if let uuid = displayUUIDString(for: displayID) {
+            defaults.set(true, forKey: "fd.ddc.disabled.\(uuid)")
+        }
+        ddcAvailableLock.withLock {
+            ddcAvailable[displayID] = false
+            ddcMaxBrightness.removeValue(forKey: displayID)
+        }
+        PowerDiagnostics.log("ddc-disabled mark displayID=\(displayID) physical=\(physical) reason=\(reason)")
+    }
+
+    @MainActor
+    @discardableResult
+    func markHardwareDDCDisabledIfKnownHighRisk(display: DisplayInfo) -> Bool {
+        guard isKnownHighRiskDDCDisplay(display) else { return false }
+        if isHardwareDDCDisabled(for: display.displayID) { return true }
+        markHardwareDDCDisabled(
+            for: display.displayID,
+            reason: "known-high-risk-display-\(display.name)"
+        )
+        return true
+    }
+
+    @MainActor
+    private func isKnownHighRiskDDCDisplay(_ display: DisplayInfo) -> Bool {
+        let normalizedName = display.name
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
+        return normalizedName.contains("s27h85")
+    }
+
     // MARK: - Public API
 
     @MainActor
@@ -158,6 +226,15 @@ final class BrightnessService: @unchecked Sendable {
                 display.brightness = b
             }
         } else {
+            if isHardwareDDCDisabled(for: displayID) {
+                ddcAvailableLock.withLock {
+                    ddcAvailable[displayID] = false
+                    ddcMaxBrightness.removeValue(forKey: displayID)
+                }
+                PowerDiagnostics.log("brightness-refresh skip-ddc-disabled displayID=\(displayID)")
+                return
+            }
+
             // First check if DDC is already known to be unavailable; if so skip the
             // async DDC call and just read the current gamma-derived brightness.
             let knownUnavailable: Bool = ddcAvailableLock.withLock {
@@ -210,6 +287,19 @@ final class BrightnessService: @unchecked Sendable {
                 self?.setInternalBrightness(value)
             }
         } else {
+            if isHardwareDDCDisabled(for: displayID) {
+                ddcAvailableLock.withLock {
+                    ddcAvailable[displayID] = false
+                    ddcMaxBrightness.removeValue(forKey: displayID)
+                }
+                display.brightness = clamped
+                PowerDiagnostics.log("brightness-set software-only displayID=\(displayID) reason=ddc-disabled")
+                queue.async { [weak self] in
+                    self?.setSoftwareBrightness(clamped, for: displayID)
+                }
+                return
+            }
+
             // Check current DDC availability status
             let currentStatus: Bool? = ddcAvailableLock.withLock { ddcAvailable[displayID] }
 
@@ -289,7 +379,7 @@ final class BrightnessService: @unchecked Sendable {
                 self.queue.async { self.setInternalBrightness(floatVal) }
             }
         } else {
-            let currentStatus: Bool? = ddcAvailableLock.withLock { ddcAvailable[displayID] }
+            let currentStatus: Bool? = isDDCAvailable(for: displayID)
 
             if currentStatus == false {
                 // Software (gamma) path: 8 steps over 200ms
@@ -390,7 +480,53 @@ final class BrightnessService: @unchecked Sendable {
     /// Returns whether DDC is available for the given display.
     /// nil means not yet determined (first use).
     func isDDCAvailable(for displayID: CGDirectDisplayID) -> Bool? {
-        ddcAvailableLock.withLock { ddcAvailable[displayID] }
+        if isHardwareDDCDisabled(for: displayID) {
+            return false
+        }
+        return ddcAvailableLock.withLock { ddcAvailable[displayID] }
+    }
+
+    /// Determines whether DDC is available using the brightness VCP, which is safer
+    /// than probing power state directly. Existing false values are respected unless
+    /// `forceProbe` is true, which is used by the explicit refresh button.
+    func ensureDDCAvailability(for displayID: CGDirectDisplayID, forceProbe: Bool = false) async -> Bool {
+        if isHardwareDDCDisabled(for: displayID) {
+            ddcAvailableLock.withLock {
+                ddcAvailable[displayID] = false
+                ddcMaxBrightness.removeValue(forKey: displayID)
+            }
+            PowerDiagnostics.log("ddc-availability skip-disabled displayID=\(displayID) force=\(forceProbe)")
+            return false
+        }
+
+        if !forceProbe, let known = isDDCAvailable(for: displayID) {
+            PowerDiagnostics.log("ddc-availability cached displayID=\(displayID) available=\(known)")
+            return known
+        }
+
+        PowerDiagnostics.log("ddc-availability probe-start displayID=\(displayID) vcp=0x10 force=\(forceProbe)")
+        let result = await withCheckedContinuation { (continuation: CheckedContinuation<(current: UInt16, max: UInt16)?, Never>) in
+            DDCService.shared.readAsync(
+                displayID: displayID,
+                command: DDCService.brightnessVCP
+            ) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        return ddcAvailableLock.withLock {
+            if let result, result.max > 0 {
+                ddcAvailable[displayID] = true
+                ddcMaxBrightness[displayID] = result.max
+                PowerDiagnostics.log("ddc-availability probe-ok displayID=\(displayID) vcp=0x10 current=\(result.current) max=\(result.max)")
+                return true
+            }
+
+            ddcAvailable[displayID] = false
+            ddcMaxBrightness.removeValue(forKey: displayID)
+            PowerDiagnostics.log("ddc-availability probe-failed displayID=\(displayID) vcp=0x10")
+            return false
+        }
     }
 
     /// Clears DDC availability and max brightness cache for a disconnected display.

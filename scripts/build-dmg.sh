@@ -6,8 +6,12 @@ APP_NAME="FreeDisplay"
 SCHEME="FreeDisplay"
 BUILD_DIR="$(pwd)/build"
 DMG_NAME="${APP_NAME}.dmg"
+STAGING_DIR="$BUILD_DIR/dmg-staging"
 
 echo "=== Building ${APP_NAME} Release ==="
+
+# Remove stale staging first so find(1) never picks a previous packaged app.
+rm -rf "$STAGING_DIR"
 
 # Clean and build Release (skip Xcode's codesign; we'll sign manually after stripping xattrs)
 xcodebuild -scheme "$SCHEME" -configuration Release \
@@ -16,7 +20,7 @@ xcodebuild -scheme "$SCHEME" -configuration Release \
   clean build 2>&1 | tail -20
 
 # Find the .app
-APP_PATH=$(find "$BUILD_DIR" -name "${APP_NAME}.app" -type d | head -1)
+APP_PATH=$(find "$BUILD_DIR/Build/Products/Release" -name "${APP_NAME}.app" -type d | head -1)
 if [ -z "$APP_PATH" ]; then
   echo "ERROR: ${APP_NAME}.app not found in build output"
   exit 1
@@ -32,8 +36,6 @@ echo "=== Signing ==="
 codesign --force --deep --sign - "$APP_PATH"
 
 # Create staging directory for DMG
-STAGING_DIR="$BUILD_DIR/dmg-staging"
-rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
 cp -R "$APP_PATH" "$STAGING_DIR/"
 ln -s /Applications "$STAGING_DIR/Applications"

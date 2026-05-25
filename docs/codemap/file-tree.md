@@ -50,7 +50,9 @@ FreeDisplay/
 │   │   ├── CGHelpers.swift                 # 共享 CG 阻塞调用工具：CGHelpers.runWithTimeout(seconds:fallback:operation:) 在后台线程以超时保护运行 WindowServer IPC 阻塞操作；被 ArrangementService、MirrorService、ResolutionService、VirtualDisplayService 使用
 │   │   ├── ColorProfileService.swift       # ICC Profile 枚举（扫描 3 个系统目录）和切换（ColorSync API）；改动影响色彩描述文件列表和切换
 │   │   ├── DDCService.swift                # ⚠️ IOKit I2C DDC/CI 通信核心：IOFramebuffer 查找、VCP 读写、5 秒 TTL 缓存、3 次重试；几乎所有外接显示器功能的底层依赖，改动需极谨慎
-│   │   ├── DisplayManager.swift            # ⚠️ 显示器枚举（CGGetOnlineDisplayList）+ CGDisplay 热插拔回调 + arrangeExternalAboveBuiltin() 自动外接屏定位；@Published displays 被全局注入，改动影响整个显示器列表数据流
+│   │   ├── DisplayConnectionService.swift  # 显示器拓扑断开/重连：动态加载 CGSConfigureDisplayEnabled，在配置事务中启停外接屏；含离线快照、最后显示器保护、超时和日志
+│   │   ├── DisplayPowerService.swift       # DDC VCP 0xD6 电源模式语义层：仅对未禁用 DDC 的显示器读取/写入电源状态；高风险设备改走 DisplayConnectionService
+│   │   ├── DisplayManager.swift            # ⚠️ 显示器枚举（CGGetOnlineDisplayList）+ CGDisplay 热插拔回调 + 离线拓扑快照列表 + arrangeExternalAboveBuiltin() 自动外接屏定位；@Published displays 被全局注入，改动影响整个显示器列表数据流
 │   │   ├── GammaService.swift              # 软件 Gamma 调整：CGSetDisplayTransferByFormula/Table，支持对比度/增益/色温/量化/反色；所有 gamma/软件亮度写入的唯一入口；改动影响图像调整效果
 │   │   ├── HiDPIService.swift              # 写 /Library/Displays/...plist 注入 HiDPI 缩放模式，需管理员权限；改动影响 HiDPI override 生成逻辑
 │   │   ├── LaunchService.swift             # SMAppService 管理开机自启动（macOS 13+）；改动仅影响 Launch at Login 功能
@@ -70,6 +72,7 @@ FreeDisplay/
 │       ├── BrightnessSliderView.swift      # 单显示器亮度滑块（200ms 去抖）+ 全局组合亮度控制；依赖 BrightnessService + DDCService
 │       ├── ColorProfileView.swift          # ICC Profile 列表（推荐/全部分组）和切换；依赖 ColorProfileService
 │       ├── DisplayDetailView.swift         # ⚠️ 每显示器展开面板，可折叠 Section 的容器（三组分组）；新增/删除 Section 都要改此文件，且需同步 MenuBarView
+│       ├── DisplayPowerView.swift          # 外接显示器电源控制行：普通显示器用 DDC，已知高风险显示器用拓扑断开/重连；依赖 DisplayPowerService + DisplayConnectionService
 │       ├── DisplayModeListView.swift       # 分辨率模式列表（HiDPI/原生/其他分组）、收藏置顶星标、点击切换；依赖 ResolutionService
 │       ├── ImageAdjustmentView.swift       # 11 个图像调整滑块（对比度/Gamma/增益/色温/各通道/量化/反色）；依赖 GammaService
 │       ├── MainDisplayView.swift           # "设为主显示屏"行，当前已是主屏时显示状态标签；依赖 ArrangementService

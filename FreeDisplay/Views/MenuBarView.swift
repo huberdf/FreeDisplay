@@ -103,6 +103,11 @@ struct MenuBarView: View {
                     }
                 }
 
+                ForEach(displayManager.disconnectedDisplaySnapshots) { snapshot in
+                    DisconnectedDisplayRowView(snapshot: snapshot)
+                        .environmentObject(displayManager)
+                }
+
                 // 预设列表 (Phase 19)
                 Divider()
                     .opacity(0.3)
@@ -261,8 +266,7 @@ struct MenuBarView: View {
         .padding(.vertical, 6)
 
         } // end VStack
-        .frame(width: 340)
-        .frame(maxHeight: 700)
+        .frame(width: 340, height: 700)
         .padding(.vertical, 8)
         .onReceive(displayManager.$displays) { newDisplays in
             let validIDs = Set(newDisplays.map { $0.displayID })
@@ -438,5 +442,86 @@ struct DisplayRowView: View {
         .accessibilityLabel("显示器：\(display.name)\(display.isMain ? "，主显示器" : "")\(isExpanded ? "，已展开" : "，已折叠")")
         .accessibilityHint("点击展开控制面板")
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+private struct DisconnectedDisplayRowView: View {
+    let snapshot: DisplayConnectionSnapshot
+    @EnvironmentObject var displayManager: DisplayManager
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "display.trianglebadge.exclamationmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 20, height: 20)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.orange))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(snapshot.name)
+                        .font(.body)
+                        .lineLimit(1)
+                    Text("\(snapshot.resolutionText) · 已断开")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .frame(width: 18, height: 18)
+                } else {
+                    Button {
+                        reconnect()
+                    } label: {
+                        Label("重连", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("用保存的拓扑快照重新启用这台显示器")
+                }
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 28)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.primary.opacity(isHovered ? 0.06 : 0))
+        .onHover { isHovered = $0 }
+    }
+
+    private func reconnect() {
+        guard !isLoading else { return }
+        errorMessage = nil
+        isLoading = true
+
+        Task {
+            let result = await DisplayConnectionService.shared.requestReconnect(snapshot: snapshot)
+            await MainActor.run {
+                displayManager.refreshDisplays(invalidateTransportCaches: true)
+            }
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            await MainActor.run {
+                displayManager.refreshDisplays(invalidateTransportCaches: true)
+                isLoading = false
+                if !result.success {
+                    errorMessage = result.userMessage
+                }
+            }
+        }
     }
 }
