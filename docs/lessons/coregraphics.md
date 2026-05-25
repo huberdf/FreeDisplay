@@ -1,6 +1,6 @@
 # 踩坑经验 — CoreGraphics
 
-> 更新: 2026-03-05
+> 更新: 2026-05-23
 
 ## CoreGraphics / 显示器
 
@@ -93,3 +93,17 @@
 - **原因**: 用 display.pixelWidth/pixelHeight（来自 CGDisplayPixelsWide/High）作为原生分辨率传入，但显示器当前可能在非原生分辨率
 - **解法**: 用 display.availableModes.max(by: width*height) 获取最大可用模式作为原生分辨率
 - **教训**: CGDisplayPixelsWide/High 返回的是当前模式的像素尺寸，不是面板物理分辨率
+
+### L-035: CGSConfigureDisplayEnabled 必须放在 CGDisplayConfiguration 事务中
+- **现象**: 用 `CGSMainConnectionID()` 作为第一个参数调用 `CGSConfigureDisplayEnabled` 会直接崩在 SkyLight
+- **原因**: 该符号虽然是 CGS/SLS 前缀，但实际调用形态是 `CGSConfigureDisplayEnabled(CGDisplayConfigRef, CGDirectDisplayID, enabled)`，第一个参数必须来自 `CGBeginDisplayConfiguration`
+- **解法**: 用 `dlopen` + `dlsym` 动态加载 `CGSConfigureDisplayEnabled`/`SLSConfigureDisplayEnabled`，在 `CGBeginDisplayConfiguration` → configure enabled → `CGCompleteDisplayConfiguration(.forSession)` 事务中执行，并用 `CGHelpers.runWithTimeout` 包住 WindowServer IPC
+- **教训**: 私有 WindowServer API 不能只凭命名前缀猜签名；先用无副作用参数验证 ABI，再接入真实路径
+- **日期**: 2026-05-23
+
+### L-036: 拓扑断开后必须保留离线重连入口
+- **现象**: S27H85x 执行 `CGSConfigureDisplayEnabled(false)` 后，系统显示 `online=false active=false`，FreeDisplay 菜单里不再出现这台显示器，导致用户无法从 UI 重连
+- **原因**: UI 只渲染 `CGGetOnlineDisplayList` 返回的在线显示器；拓扑断开会把目标从在线列表移除，但同一个 `CGDirectDisplayID` 仍可用 `CGSConfigureDisplayEnabled(true)` 恢复
+- **解法**: 断开前保存 `DisplayConnectionSnapshot`，`DisplayManager` 在刷新时计算 `disconnectedDisplaySnapshots`，`MenuBarView` 渲染“已断开”行并调用快照重连；日志记录 online IDs、离线快照和每次拓扑调用结果
+- **教训**: 任何“禁用/断开”功能都必须先做可见的恢复路径；不能把恢复入口挂在会被断开的对象自身上
+- **日期**: 2026-05-23

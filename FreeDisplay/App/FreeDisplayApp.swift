@@ -31,7 +31,7 @@ struct FreeDisplayApp: App {
                             // Give WindowServer 2 seconds to stabilize after wake before
                             // touching display state.
                             try? await Task.sleep(nanoseconds: 2_000_000_000)
-                            dm.refreshDisplays()
+                            dm.refreshDisplays(invalidateTransportCaches: true)
                             try? await Task.sleep(nanoseconds: 500_000_000)
                             for display in dm.displays {
                                 // Apply software brightness factor first so GammaService
@@ -45,7 +45,7 @@ struct FreeDisplayApp: App {
                     }
                 }
         } label: {
-            Image(systemName: "display")
+            Label("FreeDisplay", systemImage: "display")
         }
         .menuBarExtraStyle(.window)
     }

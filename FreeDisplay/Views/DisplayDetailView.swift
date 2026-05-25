@@ -35,6 +35,10 @@ struct DisplayDetailView: View {
             // HiDPI toggle — before mode list (natural workflow: enable HiDPI → pick resolution)
             HiDPIRowView(display: display)
 
+            // DDC power controls (external displays only)
+            DisplayPowerView(display: display)
+                .environmentObject(displayManager)
+
             // Display mode list toggle row
             ExpandableRow(
                 icon: "rectangle.on.rectangle",
@@ -123,4 +127,3 @@ struct DisplayDetailView: View {
         }
     }
 }
-

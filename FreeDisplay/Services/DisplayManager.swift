@@ -23,7 +23,7 @@ private func displayReconfigCallback(
             // Mode or main-display change: refresh mode info for existing displays only.
             manager.refreshExistingDisplayModes()
         } else {
-            manager.refreshDisplays()
+            manager.refreshDisplays(invalidateTransportCaches: true)
         }
 
         // Auto-rearrange after any display config change completes (debounced 500 ms).
@@ -34,6 +34,8 @@ private func displayReconfigCallback(
 @MainActor
 class DisplayManager: ObservableObject {
     @Published var displays: [DisplayInfo] = []
+    @Published var disconnectedDisplaySnapshots: [DisplayConnectionSnapshot] = []
+    @Published private(set) var displayConfigurationRevision = 0
 
     // nonisolated(unsafe) allows deinit (which is nonisolated in Swift 6) to access this value.
     nonisolated(unsafe) private var callbackContext: UnsafeMutableRawPointer?
@@ -53,7 +55,7 @@ class DisplayManager: ObservableObject {
         }
     }
 
-    func refreshDisplays() {
+    func refreshDisplays(invalidateTransportCaches: Bool = false) {
         var displayCount: UInt32 = 0
         CGGetOnlineDisplayList(0, nil, &displayCount)
         var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
@@ -61,6 +63,14 @@ class DisplayManager: ObservableObject {
 
         let currentIDs = Set(displays.map { $0.displayID })
         let newIDSet = Set((0..<Int(displayCount)).map { displayIDs[$0] })
+
+        if invalidateTransportCaches || currentIDs != newIDSet {
+            displayConfigurationRevision &+= 1
+            DDCService.shared.clearAllCaches()
+            displays.forEach {
+                BrightnessService.shared.invalidateDDCState(for: $0.displayID)
+            }
+        }
 
         // Clean up DDC cache for removed displays to prevent stale entries accumulating
         let removedIDs = currentIDs.subtracting(newIDSet)
@@ -92,6 +102,10 @@ class DisplayManager: ObservableObject {
         // Regenerate built-in presets (HiDPI 模式 / 原生模式) from updated display list.
         PresetService.shared.refreshBuiltins()
 
+        for display in updatedDisplays {
+            BrightnessService.shared.markHardwareDDCDisabledIfKnownHighRisk(display: display)
+        }
+
         // Only load details / refresh brightness for newly appeared displays
         for display in addedDisplays {
             Task { await BrightnessService.shared.refreshBrightness(for: display) }
@@ -117,7 +131,22 @@ class DisplayManager: ObservableObject {
         for display in updatedDisplays where keptIDs.contains(display.displayID) {
             display.bounds = CGDisplayBounds(display.displayID)
             display.isMain = CGDisplayIsMain(display.displayID) != 0
+            display.isOnline = CGDisplayIsOnline(display.displayID) != 0
+            display.isEnabled = CGDisplayIsActive(display.displayID) != 0
         }
+
+        for display in updatedDisplays {
+            DisplayConnectionService.shared.remember(display: display)
+        }
+
+        let activePhysicalIDs = Set(updatedDisplays.map {
+            "v\($0.vendorNumber)-m\($0.modelNumber)-s\($0.serialNumber)"
+        })
+        disconnectedDisplaySnapshots = DisplayConnectionService.shared.offlineSnapshots(
+            activeDisplayIDs: newIDSet,
+            activePhysicalIDs: activePhysicalIDs
+        )
+        PowerDiagnostics.log("display-manager refresh onlineIDs=\(newIDSet.sorted()) disconnectedSnapshots=\(disconnectedDisplaySnapshots.map { "\($0.name)#\($0.displayID)" }.joined(separator: ","))")
     }
 
     /// Auto-enables HiDPI plist override for external 2K+ displays that don't have it yet.
