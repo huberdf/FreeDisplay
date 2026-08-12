@@ -21,6 +21,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Start intercepting brightness keys to route them to the display under the cursor.
         BrightnessKeyService.shared.start()
 
+        // 若上次退出时「竖屏模式」处于开启状态，重新武装自动启动。
+        // 这里只是武装：Sidecar 通常在登录几秒后才连上，且每次 displayID 都会变，
+        // 真正的启动发生在检测到 Sidecar 显示器出现时。
+        RotatedSidecarService.shared.restoreIfEnabled()
+
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,

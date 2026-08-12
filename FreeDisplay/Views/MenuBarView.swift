@@ -67,9 +67,11 @@ struct MenuBarView: View {
     @ObservedObject private var updateService = UpdateService.shared
     @ObservedObject private var settings = SettingsService.shared
     @ObservedObject private var virtualDisplayService = VirtualDisplayService.shared
+    @ObservedObject private var rotatedSidecar = RotatedSidecarService.shared
     @State private var expandedDisplayIDs: Set<CGDirectDisplayID> = []
     @State private var showArrangement: Bool = false
     @State private var showVirtualDisplays: Bool = false
+    @State private var showRotatedSidecar: Bool = false
     @State private var showAutoBrightness: Bool = false
     @State private var showSettings: Bool = false
     @State private var quitHovered = false
@@ -163,6 +165,22 @@ struct MenuBarView: View {
                     VirtualDisplayView()
                         .padding(.leading, 8)
                         .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                // Sidecar 竖屏入口 —— 仅在连接了 Sidecar 显示器时显示
+                if rotatedSidecar.isSidecarConnected {
+                    ExpandableRow(
+                        icon: "ipad.landscape.badge.play",
+                        iconColor: .indigo,
+                        label: "Sidecar",
+                        isExpanded: $showRotatedSidecar
+                    )
+
+                    if showRotatedSidecar {
+                        RotatedSidecarView()
+                            .padding(.leading, 8)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
 
                 // 自动亮度入口 (Phase 11)

@@ -14,12 +14,46 @@
 - `IOFBCopyI2CInterfaceForBus(framebuffer, busIndex, &interface)` 是比手动查 IOFramebufferI2CInterface 子节点更干净的 API，推荐使用
 - `BrightnessService` 方法若要访问 `@MainActor` 隔离的 `DisplayInfo` 属性，需标记为 `@MainActor`；实际 DDC I/O 由 DDCService 内部的 ddcQueue 异步执行，不阻塞 MainActor
 
-## IOKit / 屏幕旋转（Phase 4）
+## IOKit / 屏幕旋转（Phase 4）— ⚠️ 已失效，不要照做
+
+> **2026-08-12 更新：下面这套 `IOFBTransform` 旋转方案在 Apple Silicon 上完全不可用。**
+> 在 M4 Pro / macOS 26.4 上实测：
+>
+> ```
+> ioreg -rc IODisplayConnect     → 0 个服务
+> ioreg -l | grep IOFBTransform  → 0 个匹配
+> ```
+>
+> 显示器由 DCP 驱动，根本不存在 IOFramebuffer 可写。这影响机器上**所有**显示器，
+> 不只是 Sidecar。（与"IOFramebuffer I2C DDC 在 Apple Silicon 上不工作、必须走
+> IOAVService"是同一个根因。）旋转代码已在 Phase 21 删除，**不要恢复**。
+>
+> - `CGDisplayRotation()` 只读，没有公开 setter
+> - 但**旋转本身并非做不到** — BetterDisplay 有可用的旋转功能，说明存在别的机制，
+>   本次未查明。若将来要做旋转，先去查 BetterDisplay 怎么实现，❌ 不要从下面这段开始
+> - Sidecar 显示器在系统设置里**根本没有 Rotation 选项** → 系统层面就不支持，
+>   任何 API 都救不了；竖屏 iPad 的正解见 `RotatedSidecarService`（旋转虚拟屏 + 串流）
+
+历史记录（Intel 时代有效，Apple Silicon 无效）：
 
 - `CGDisplayIOServicePort` 在最新 macOS SDK 中已彻底 **unavailable**（非 deprecated），直接报错，必须用 IOKit registry 遍历代替
 - 替代方式：遍历 `IODisplayConnect` → 用 vendor/model 匹配 → `IORegistryEntryGetParentEntry(service, kIOServicePlane, &parent)` 得到 IOFramebuffer（与 DDCService.framebufferService 完全相同的模式）
 - 屏幕旋转：`IORegistryEntrySetCFProperty(fb, "IOFBTransform", NSNumber(value: index))` + `IOServiceRequestProbe(fb, 0x00000400)` 触发；旋转 index = 0/1/2/3 对应 0°/90°/180°/270°
 - `import IOKit.graphics` 对于 `IOServiceRequestProbe` 所需的图形常量是必要的
+
+## Sidecar 显示器（2026-08-12）
+
+- Sidecar 的 CoreGraphics ID 是 ASCII 编码：vendor `0x6161706c` = "aapl"，model `0x69506164` = "iPad"
+- **`CGDirectDisplayID` 每次重连都会变**（一次会话内观察到 7→8→9→12→19→24→30→32）；
+  锁定 iPad 方向、开关镜像都算重连 → ❌ 不要跨重连缓存 displayID，要监听
+  `NSApplication.didChangeScreenParametersNotification`
+- `/Library/Displays/.../Overrides` 的 plist **对 Sidecar 有效**（能注入分辨率），
+  但 iPad 端不能正确呈现竖屏 framebuffer（画面只占一角或 3/4），所以这条路走不通
+- **macOS 会持久化镜像配置**：用户曾把某个显示器镜像到 Sidecar 后，之后新建的虚拟
+  显示器会被自动并入那个镜像组。被镜像的从属显示器是 **online 但不 active**，
+  不会出现在 `SCShareableContent` 里，报错表现为莫名其妙的"找不到目标显示器"。
+  排查要点：对比 `CGGetOnlineDisplayList` 和 `CGGetActiveDisplayList`，两者不一致就是它
+- 新建的虚拟显示器不会立刻出现在 `SCShareableContent` 里（窗口服务器异步刷新）→ 要轮询
 
 ## IOKit / 环境光传感器（Phase 11）
 
