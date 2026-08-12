@@ -5,11 +5,23 @@ import SwiftUI
 /// Supports drag-to-reposition and "Set as main display" button for secondary displays.
 struct ArrangementView: View {
     @EnvironmentObject var displayManager: DisplayManager
+    @ObservedObject private var rotatedSidecar = RotatedSidecarService.shared
     @State private var draggedID: CGDirectDisplayID?
     @State private var dragOffset: CGSize = .zero
     @State private var dragError: String?
 
     private let canvasHeight: CGFloat = 160
+
+    /// 要绘制的显示器。「竖屏模式」运行时隐藏物理 Sidecar 屏：
+    /// 它只是被停在角落的被动输出面，用户不会去操作它，
+    /// 拖动它反而会破坏「只有一角接触」这一防止光标跑进去的前提。
+    /// 由竖屏的虚拟显示器代表它。
+    private var arrangeableDisplays: [DisplayInfo] {
+        guard rotatedSidecar.isActive, let hidden = rotatedSidecar.targetDisplayID else {
+            return displayManager.displays
+        }
+        return displayManager.displays.filter { $0.displayID != hidden }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -40,12 +52,12 @@ struct ArrangementView: View {
             }
 
             // "Set as main display" for non-main displays
-            ForEach(displayManager.displays.filter { !$0.isMain }) { display in
+            ForEach(arrangeableDisplays.filter { !$0.isMain }) { display in
                 Button(action: {
                     Task { @MainActor in
                         let ok = await ArrangementService.shared.setAsMainDisplay(
                             display.displayID,
-                            among: displayManager.displays
+                            among: arrangeableDisplays
                         )
                         if ok { displayManager.refreshDisplays() }
                     }
@@ -69,7 +81,7 @@ struct ArrangementView: View {
     @ViewBuilder
     private func thumbnails(canvasSize: CGSize) -> some View {
         let layout = computeLayout(canvasSize: canvasSize)
-        ForEach(displayManager.displays) { display in
+        ForEach(arrangeableDisplays) { display in
             let rect = layout[display.displayID] ?? CGRect(x: canvasSize.width / 2, y: canvasSize.height / 2, width: 60, height: 40)
             let isDragged = draggedID == display.displayID
             DisplayThumbnailView(display: display, isDragged: isDragged)
@@ -96,7 +108,7 @@ struct ArrangementView: View {
 
     /// Computes the canvas-space rect for each display, scaled to fit the canvas.
     private func computeLayout(canvasSize: CGSize) -> [CGDirectDisplayID: CGRect] {
-        let displays = displayManager.displays
+        let displays = arrangeableDisplays
         guard !displays.isEmpty else { return [:] }
 
         let allBounds = displays.map { CGDisplayBounds($0.displayID) }
@@ -133,7 +145,7 @@ struct ArrangementView: View {
 
     /// Converts the drag translation to screen coordinates and applies the new position.
     private func applyDrag(for display: DisplayInfo, translation: CGSize, layout: [CGDirectDisplayID: CGRect], canvasSize: CGSize) {
-        let displays = displayManager.displays
+        let displays = arrangeableDisplays
         guard !displays.isEmpty else { return }
 
         let allBounds = displays.map { CGDisplayBounds($0.displayID) }
@@ -212,11 +224,14 @@ private struct DisplayThumbnailView: View {
 
             // 显示器名称 + 主显示标记
             VStack(spacing: 2) {
+                // 换行而不是截断：竖屏缩略图很窄，单行会把名称截成「Fre…rtual」。
                 Text(display.name)
                     .font(.system(size: 8, weight: .medium))
                     .foregroundColor(display.isBuiltin ? .white : .primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.75)
+                    .fixedSize(horizontal: false, vertical: true)
                 if display.isMain {
                     HStack(spacing: 2) {
                         Image(systemName: "star.fill")

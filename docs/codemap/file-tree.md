@@ -60,7 +60,11 @@ FreeDisplay/
 │   │   ├── SettingsService.swift           # UserDefaults + JSON 文件持久化全局和每显示器设置；改动需注意 key 命名（必须 fd. 前缀）和向后兼容
 │   │   ├── UpdateService.swift             # GitHub Releases API 检查新版本，语义化版本比较；改动影响更新检查逻辑
 │   │   ├── VirtualDisplayService.swift     # 虚拟显示器创建/销毁：CGVirtualDisplay 私有 API（vendorID 必须非零如 0xEEEE，主线程创建），HiDPI via 镜像模式，CGHelpers.runWithTimeout 超时保护，hiDPILog 文件调试日志，ObjC 类型 Sendable 扩展；HiDPI 配置仅运行时生效不持久化；改动影响虚拟显示器和 HiDPI 一键预设功能
+│   │   ├── RotatedSidecarService.swift    # 旋转 Sidecar：不旋转 Sidecar 屏本身（CGDisplayRotation 只读、Apple Silicon 无 IODisplayConnect），而是建宽高对调的虚拟屏 → SCStream 抓取 → CoreImage 旋转 90° → 无边框全屏窗口投到 Sidecar；Sidecar 检测靠 ASCII ID（vendor 0x6161706c "aapl" / model 0x69506164 "iPad"）；需要屏幕录制权限
+│   │   ├── ScreenCaptureService.swift     # ScreenCaptureKit SCStream 单屏抓取，输出 CIImage 帧；Phase 21 删除后为旋转 Sidecar 功能恢复
 │   │   └── PresetService.swift             # 预设管理：保存/加载/应用显示器配置预设；使用 DisplayManagerAccessor 读取当前显示器状态；presets.json 存储在 ~/Library/Application Support/FreeDisplay/
+│   ├── ViewModels/                 # 视图模型
+│   │   └── StreamViewModel.swift           # 串流帧处理：旋转/翻转/裁剪/滤镜（CoreImage）+ 抓取开关；旋转 Sidecar 用其 config.rotation；Phase 21 删除后恢复
 │   ├── Utilities/                  # 工具扩展
 │   │   └── NSScreenExtension.swift         # NSScreen 扩展：按 CGDirectDisplayID 查找 NSScreen，获取 displayID；被 NotchView、NotchOverlayManager 依赖
 │   ├── FreeDisplay-Bridging-Header.h       # 私有 API 声明：CGVirtualDisplay（macOS 14+）和 IOAVService（Apple Silicon DDC）；属性名已对照 Chromium 源码验证（maxPixelsWide/maxPixelsHigh 非 maxPixelSize）
@@ -79,6 +83,8 @@ FreeDisplay/
 │       ├── SystemColorView.swift           # 系统取色器（NSColorSampler）+ HEX/RGB/HSB 显示 + 历史记录；依赖 SettingsService 持久化颜色历史
 │       ├── HiDPIView.swift                 # HiDPI Override 状态行（plist 方案）+ 写入/还原按钮；依赖 HiDPIService
 │       ├── VirtualDisplayView.swift        # 虚拟显示器配置列表 + 创建表单（预设分辨率）+ HiDPI 一键预设；依赖 VirtualDisplayService
+│       ├── RotatedSidecarView.swift        # Sidecar 竖屏模式开关 + 方向选择（上/下）；依赖 RotatedSidecarService
+│       ├── StreamWindow.swift              # 串流输出窗口：StreamWindowController.showFullScreen(on:) 无边框全屏窗口 + Metal CIContext 渲染 CIImage；Phase 21 删除后为旋转 Sidecar 功能恢复
 │       └── SavePresetView.swift            # 保存当前显示器状态为预设；内联表单（名称 + 图标选择器）；调用 PresetService.captureCurrentState + addPreset
 ├── FreeDisplay.xcodeproj/          # Xcode 项目文件（由 xcodegen 生成，不要手动编辑）
 ├── .gitignore                      # Git 忽略规则

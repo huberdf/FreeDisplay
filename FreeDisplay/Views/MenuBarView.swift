@@ -67,9 +67,11 @@ struct MenuBarView: View {
     @ObservedObject private var updateService = UpdateService.shared
     @ObservedObject private var settings = SettingsService.shared
     @ObservedObject private var virtualDisplayService = VirtualDisplayService.shared
+    @ObservedObject private var rotatedSidecar = RotatedSidecarService.shared
     @State private var expandedDisplayIDs: Set<CGDirectDisplayID> = []
     @State private var showArrangement: Bool = false
     @State private var showVirtualDisplays: Bool = false
+    @State private var showRotatedSidecar: Bool = false
     @State private var showAutoBrightness: Bool = false
     @State private var showSettings: Bool = false
     @State private var quitHovered = false
@@ -165,6 +167,22 @@ struct MenuBarView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
+                // Sidecar 竖屏入口 —— 仅在连接了 Sidecar 显示器时显示
+                if rotatedSidecar.isSidecarConnected {
+                    ExpandableRow(
+                        icon: "ipad.landscape.badge.play",
+                        iconColor: .indigo,
+                        label: "Sidecar",
+                        isExpanded: $showRotatedSidecar
+                    )
+
+                    if showRotatedSidecar {
+                        RotatedSidecarView()
+                            .padding(.leading, 8)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+
                 // 自动亮度入口 (Phase 11)
                 ExpandableRow(
                     icon: "sun.and.horizon.fill",
@@ -226,7 +244,12 @@ struct MenuBarView: View {
                 }
 
             }
+            // 给滚动内容一个确定的宽度，ScrollView 才能算出高度：
+            // MenuBarExtra(.window) 给的是不确定尺寸，未加约束的 ScrollView 会塌成 0 高。
+            .frame(width: 340, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(minHeight: 60, maxHeight: 640)
 
         Divider().opacity(0.3)
 
@@ -262,7 +285,7 @@ struct MenuBarView: View {
 
         } // end VStack
         .frame(width: 340)
-        .frame(maxHeight: 700)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 8)
         .onReceive(displayManager.$displays) { newDisplays in
             let validIDs = Set(newDisplays.map { $0.displayID })

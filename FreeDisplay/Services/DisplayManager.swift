@@ -215,8 +215,15 @@ class DisplayManager: ObservableObject {
     func arrangeExternalAboveBuiltin() {
         guard UserDefaults.standard.bool(forKey: "fd.arrangement.externalAbove") else { return }
 
+        // 「竖屏模式」运行时，它管理的两块屏由 RotatedSidecarService 独占摆位：
+        // 物理 Sidecar 屏被停在只有一个角接触的位置，光标才进不去。
+        // 而本方法会在任意显示器变更后 500ms 触发 —— 包括停放动作本身造成的变更、
+        // 以及用户手动拖动 —— 不排除的话会立刻把摆位覆盖掉，
+        // 表现为「过几秒又跳回去」。
+        let sidecarOwned = RotatedSidecarService.shared.managedDisplayIDs
+
         guard let builtin = displays.first(where: { $0.isBuiltin }) else { return }
-        let externals = displays.filter { !$0.isBuiltin }
+        let externals = displays.filter { !$0.isBuiltin && !sidecarOwned.contains($0.displayID) }
         guard !externals.isEmpty else { return }
 
         let builtinX = Int(builtin.bounds.origin.x)

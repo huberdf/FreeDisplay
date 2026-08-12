@@ -68,6 +68,14 @@ final class VirtualDisplayService: ObservableObject, @unchecked Sendable {
         activeDisplayObjects.values.contains { $0.displayID == displayID }
     }
 
+    /// 指定 config 对应的虚拟显示器的实时 `CGDirectDisplayID`；未激活时返回 nil。
+    func displayID(for configID: UUID) -> CGDirectDisplayID? {
+        guard let vd = activeDisplayObjects[configID], vd.displayID != kCGNullDirectDisplay else {
+            return nil
+        }
+        return vd.displayID
+    }
+
     // MARK: - Create / Destroy
 
     /// Creates a virtual display from the given config using CGVirtualDisplay private API.
@@ -90,7 +98,9 @@ final class VirtualDisplayService: ObservableObject, @unchecked Sendable {
         )
         descriptor.maxPixelsWide = UInt32(w)
         descriptor.maxPixelsHigh = UInt32(h)
-        descriptor.name = "FreeDisplay Virtual"
+        // 用 config 自己的名字：NSScreen.localizedName 取的就是这个值，
+        // 也就是用户在「排列显示器」和系统设置里看到的名称。
+        descriptor.name = config.name
         descriptor.vendorID = 0xEEEE  // non-zero required — 0 causes CGVirtualDisplay(descriptor:) to return nil
         descriptor.productID = 0x0001
         descriptor.serialNum = 0x0001
