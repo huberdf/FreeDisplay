@@ -14,10 +14,10 @@ struct HiDPIRowView: View {
             HStack {
                 MenuItemIcon(systemName: "sparkles", color: .orange)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("HiDPI 模式")
+                    Text(L("HiDPI Modu", "HiDPI Mode"))
                         .font(.body)
-                    if !isHiDPIOn {
-                        Text("需要管理员权限")
+                    if HiDPIService.shared.requiresAdmin(vendor: display.vendorNumber) {
+                        Text(L("Yönetici izni gerekir (bir kez)", "Requires administrator permission (once)"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -48,11 +48,11 @@ struct HiDPIRowView: View {
                     product: display.modelNumber
                 )
             }
-            .alert("HiDPI 操作失败", isPresented: Binding(
+            .alert(L("HiDPI işlemi başarısız", "HiDPI operation failed"), isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
             )) {
-                Button("确定") { errorMessage = nil }
+                Button(L("Tamam", "OK")) { errorMessage = nil }
             } message: {
                 if let msg = errorMessage {
                     Text(msg)

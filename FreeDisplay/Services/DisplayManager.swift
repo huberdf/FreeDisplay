@@ -89,7 +89,7 @@ class DisplayManager: ObservableObject {
         displays = updatedDisplays
         DisplayManagerAccessor.shared.displays = updatedDisplays
 
-        // Regenerate built-in presets (HiDPI 模式 / 原生模式) from updated display list.
+        // Regenerate built-in presets (HiDPI Mode / Native Mode) from updated display list.
         PresetService.shared.refreshBuiltins()
 
         // Only load details / refresh brightness for newly appeared displays
@@ -126,6 +126,8 @@ class DisplayManager: ObservableObject {
         let vendor = display.vendorNumber
         let product = display.modelNumber
         guard vendor != 0, product != 0 else { return }
+        // Skip FreeDisplay's own virtual displays (VirtualDisplayService uses vendor 0xEEEE).
+        guard vendor != 0xEEEE else { return }
 
         // Already enabled — nothing to do
         guard !HiDPIService.shared.isHiDPIEnabled(vendor: vendor, product: product) else { return }
@@ -160,6 +162,13 @@ class DisplayManager: ObservableObject {
 
     /// Debounces calls to `arrangeExternalAboveBuiltin()` — coalesces bursts of config-change
     /// callbacks into a single rearrange that fires 500 ms after the last callback arrives.
+    /// Re-applies app-generated display names after an in-app language switch.
+    func relocalizeDisplayNames() {
+        for display in displays where display.isBuiltin {
+            display.name = DisplayInfo.builtinDisplayName
+        }
+    }
+
     func scheduleAutoArrange() {
         autoArrangeWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in

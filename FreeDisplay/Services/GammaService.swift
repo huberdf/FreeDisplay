@@ -66,11 +66,78 @@ final class GammaService: @unchecked Sendable {
         }
     }
 
-    /// Re-applies the stored adjustment (incorporating the current software brightness factor).
+    /// True when GammaService must write this display's transfer function: either an image
+    /// adjustment is active or the night mode tint is on. BrightnessService delegates to
+    /// GammaService in that case instead of writing its own ramp.
+    func ownsTransfer(for displayID: CGDirectDisplayID) -> Bool {
+        hasActiveAdjustment(for: displayID) || isNightTintActive
+    }
+
+    /// Re-applies the stored adjustment (incorporating the current software brightness factor
+    /// and night tint). With no active adjustment, applies the night tint alone if it is on.
     func reapply(for displayID: CGDirectDisplayID) {
-        let adj = adjustmentsLock.withLock { activeAdjustments[displayID] }
-        guard let adj, !adj.isPaused else { return }
-        applyInternal(adj, for: displayID)
+        let (adj, tintActive) = adjustmentsLock.withLock {
+            (activeAdjustments[displayID], nightTint != Self.neutralTint)
+        }
+        if let adj, !adj.isPaused {
+            applyInternal(adj, for: displayID)
+        } else if tintActive {
+            applyInternal(GammaAdjustment(), for: displayID)
+        }
+    }
+
+    // MARK: - Night Mode Tint
+
+    private static let neutralTint = (r: 1.0, g: 1.0, b: 1.0)
+
+    /// Global per-channel white-point multiplier set by NightModeService (guarded by adjustmentsLock).
+    private var nightTint = GammaService.neutralTint
+
+    var isNightTintActive: Bool {
+        adjustmentsLock.withLock { nightTint != Self.neutralTint }
+    }
+
+    /// Sets the night tint and rewrites every online display so it takes effect immediately.
+    /// Displays without an image adjustment get a neutral formula (tint × software brightness),
+    /// which is the identity curve once the tint returns to neutral.
+    func setNightTint(r: Double, g: Double, b: Double) {
+        adjustmentsLock.withLock { nightTint = (r, g, b) }
+        for displayID in onlineDisplayIDs() {
+            let adj = adjustmentsLock.withLock { activeAdjustments[displayID] }
+            if let adj, !adj.isPaused {
+                applyInternal(adj, for: displayID)
+            } else {
+                applyInternal(GammaAdjustment(), for: displayID)
+            }
+        }
+    }
+
+    /// Per-channel multipliers for a colour temperature in kelvin, normalised so 6500 K → (1, 1, 1).
+    func whitePointFactors(kelvin: Double) -> (r: Double, g: Double, b: Double) {
+        let (r, g, b) = kelvinToRGB(kelvin)
+        let (rN, gN, bN) = kelvinToRGB(6500.0)
+        return (
+            rN > 0 ? r / rN : r,
+            gN > 0 ? g / gN : g,
+            bN > 0 ? b / bN : b
+        )
+    }
+
+    private func onlineDisplayIDs() -> [CGDirectDisplayID] {
+        var displayCount: UInt32 = 0
+        CGGetOnlineDisplayList(32, nil, &displayCount)
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
+        CGGetOnlineDisplayList(displayCount, &displays, &displayCount)
+        return displays
+    }
+
+    /// Multiplies the current night tint and software brightness factor into the channel maxima.
+    private func applyTintAndBrightness(_ p: inout ChannelParams, for displayID: CGDirectDisplayID) {
+        let tint = adjustmentsLock.withLock { nightTint }
+        let brightnessFactor = max(0.05, BrightnessService.shared.currentSoftwareBrightness(for: displayID) ?? 1.0)
+        p.rHi = min(1.0, p.rHi * brightnessFactor * tint.r)
+        p.gHi = min(1.0, p.gHi * brightnessFactor * tint.g)
+        p.bHi = min(1.0, p.bHi * brightnessFactor * tint.b)
     }
 
     // MARK: - Public API
@@ -99,6 +166,11 @@ final class GammaService: @unchecked Sendable {
                 adj.isPaused = true
                 activeAdjustments[displayID] = adj
             }
+        }
+        // Keep the night tint while image adjustments are paused.
+        if isNightTintActive {
+            applyInternal(GammaAdjustment(), for: displayID)
+            return
         }
         CGSetDisplayTransferByFormula(displayID,
             0.0, 1.0, 1.0,
@@ -138,6 +210,11 @@ final class GammaService: @unchecked Sendable {
             // Passing NSNull() for the profile key removes the custom override.
             let removeInfo: NSDictionary = [profileIDKey: NSNull()]
             ColorSyncDeviceSetCustomProfiles(deviceClass, uuid, removeInfo as CFDictionary)
+        }
+
+        // Resetting image adjustments must not switch off night mode.
+        if isNightTintActive {
+            applyInternal(GammaAdjustment(), for: displayID)
         }
     }
 
@@ -186,7 +263,13 @@ final class GammaService: @unchecked Sendable {
     /// Re-applies the persisted gamma adjustment for a display (e.g. after wake from sleep
     /// or display reconnect). No-op if no saved state exists or the adjustment is paused.
     func reapplyIfNeeded(for displayID: CGDirectDisplayID) {
-        guard let adj = loadSavedState(for: displayID), !adj.isPaused else { return }
+        guard let adj = loadSavedState(for: displayID), !adj.isPaused else {
+            // No image adjustment, but the night tint still has to be restored.
+            if isNightTintActive {
+                applyInternal(GammaAdjustment(), for: displayID)
+            }
+            return
+        }
         adjustmentsLock.withLock { activeAdjustments[displayID] = adj }
         applyInternal(adj, for: displayID)
     }
@@ -201,12 +284,9 @@ final class GammaService: @unchecked Sendable {
 
     private func applyFormula(_ adj: GammaAdjustment, for displayID: CGDirectDisplayID) {
         var p = channelParams(for: adj)
-        // Incorporate software brightness factor so BrightnessService and GammaService
-        // do not overwrite each other's transfer function.
-        let brightnessFactor = max(0.05, BrightnessService.shared.currentSoftwareBrightness(for: displayID) ?? 1.0)
-        p.rHi = min(1.0, p.rHi * brightnessFactor)
-        p.gHi = min(1.0, p.gHi * brightnessFactor)
-        p.bHi = min(1.0, p.bHi * brightnessFactor)
+        // Incorporate software brightness and night tint so BrightnessService, NightModeService
+        // and GammaService do not overwrite each other's transfer function.
+        applyTintAndBrightness(&p, for: displayID)
         CGSetDisplayTransferByFormula(displayID,
             CGGammaValue(p.rLo), CGGammaValue(p.rHi), CGGammaValue(p.rGam),
             CGGammaValue(p.gLo), CGGammaValue(p.gHi), CGGammaValue(p.gGam),
@@ -277,13 +357,7 @@ final class GammaService: @unchecked Sendable {
         } else {
             kelvin = 6500.0 - sliderValue / 100.0 * 5500.0  // 6500 K → 12000 K
         }
-        let (r, g, b) = kelvinToRGB(kelvin)
-        let (rN, gN, bN) = kelvinToRGB(6500.0)
-        return (
-            rN > 0 ? r / rN : r,
-            gN > 0 ? g / gN : g,
-            bN > 0 ? b / bN : b
-        )
+        return whitePointFactors(kelvin: kelvin)
     }
 
     private func kelvinToRGB(_ kelvin: Double) -> (Double, Double, Double) {
@@ -326,11 +400,8 @@ final class GammaService: @unchecked Sendable {
         var blueTable  = [CGGammaValue](repeating: 0, count: capacity)
 
         var p = channelParams(for: adj)
-        // Incorporate software brightness factor, matching applyFormula behaviour.
-        let brightnessFactor = max(0.05, BrightnessService.shared.currentSoftwareBrightness(for: displayID) ?? 1.0)
-        p.rHi = min(1.0, p.rHi * brightnessFactor)
-        p.gHi = min(1.0, p.gHi * brightnessFactor)
-        p.bHi = min(1.0, p.bHi * brightnessFactor)
+        // Incorporate software brightness and night tint, matching applyFormula behaviour.
+        applyTintAndBrightness(&p, for: displayID)
 
         for i in 0..<capacity {
             let input = Double(i) / Double(capacity - 1)

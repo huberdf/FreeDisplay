@@ -62,7 +62,7 @@ struct ResolutionSliderView: View {
                 .onAppear {
                     syncSliderToCurrentMode()
                 }
-                .help("拖动选择分辨率")
+                .help(L("Çözünürlük seçmek için sürükleyin", "Drag to choose a resolution"))
 
                 Text(previewModeFullString)
                     .font(.caption)
@@ -73,11 +73,11 @@ struct ResolutionSliderView: View {
                     .animation(.easeInOut(duration: 0.15), value: sliderIndex)
             }
 
-            // Milestone labels: 最低 / 推荐 / 最高
+            // Milestone labels: lowest / recommended / highest
             if modes.count > 1 {
                 HStack(spacing: 0) {
                     // Modes are sorted descending: index 0 = highest resolution (left), last = lowest (right)
-                    Text("最高")
+                    Text(L("En yüksek", "Highest"))
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Spacer()
@@ -91,7 +91,7 @@ struct ResolutionSliderView: View {
                                 Circle()
                                     .fill(Color.accentColor)
                                     .frame(width: 4, height: 4)
-                                Text("推荐")
+                                Text(L("Önerilen", "Recommended"))
                                     .font(.caption2)
                                     .foregroundColor(.accentColor)
                             }
@@ -101,7 +101,7 @@ struct ResolutionSliderView: View {
                     } else {
                         Spacer()
                     }
-                    Text("最低")
+                    Text(L("En düşük", "Lowest"))
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -131,7 +131,7 @@ struct ResolutionSliderView: View {
                 errorMessage = nil
             } else {
                 syncSliderToCurrentMode()
-                errorMessage = "切换失败，请重试"
+                errorMessage = L("Geçiş başarısız, tekrar deneyin", "Switch failed, please try again")
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                     errorMessage = nil

@@ -38,7 +38,7 @@ struct DisplayDetailView: View {
             // Display mode list toggle row
             ExpandableRow(
                 icon: "rectangle.on.rectangle",
-                label: "显示模式",
+                label: L("Ekran Modları", "Display Modes"),
                 subtitle: {
                     var parts: [String] = []
                     if let mode = display.currentDisplayMode {
@@ -67,7 +67,7 @@ struct DisplayDetailView: View {
             ExpandableRow(
                 icon: "paintpalette.fill",
                 iconColor: .purple,
-                label: "颜色描述文件",
+                label: L("Renk Profili", "Color Profile"),
                 subtitle: colorSpaceName,
                 isExpanded: $showColorProfile
             )
@@ -84,7 +84,7 @@ struct DisplayDetailView: View {
             // Image adjustment section
             ExpandableRow(
                 icon: "slider.horizontal.3",
-                label: "图像调整",
+                label: L("Görüntü Ayarları", "Image Adjustments"),
                 isExpanded: $showImageAdjustment
             )
 
@@ -119,6 +119,13 @@ struct DisplayDetailView: View {
         .task(id: display.displayID) {
             colorSpaceName = ""
             guard !Task.isCancelled else { return }
+            colorSpaceName = ColorProfileService.shared.currentColorSpaceName(for: display.displayID)
+        }
+        // Keep the subtitle current after a profile switch (from this app or System Settings).
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSScreen.colorSpaceDidChangeNotification)
+                .receive(on: DispatchQueue.main)
+        ) { _ in
             colorSpaceName = ColorProfileService.shared.currentColorSpaceName(for: display.displayID)
         }
     }

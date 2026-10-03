@@ -1,7 +1,7 @@
 import SwiftUI
 import CoreGraphics
 
-/// "虚拟显示器" management section shown in the MenuBarView tools area.
+/// "Virtual Displays" management section shown in the MenuBarView tools area.
 /// Lists all saved virtual display configurations and allows creating / deleting them.
 struct VirtualDisplayView: View {
     @StateObject private var service = VirtualDisplayService.shared
@@ -13,7 +13,7 @@ struct VirtualDisplayView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if service.configs.isEmpty {
-                Text("暂无虚拟显示器")
+                Text(L("Henüz sanal ekran yok", "No virtual displays yet"))
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 12)
@@ -31,7 +31,7 @@ struct VirtualDisplayView: View {
                 HStack {
                     Image(systemName: showCreateForm ? "minus.circle.fill" : "plus.circle.fill")
                         .foregroundColor(.accentColor)
-                    Text(showCreateForm ? "取消" : "创建虚拟显示器")
+                    Text(showCreateForm ? L("İptal", "Cancel") : L("Sanal Ekran Oluştur", "Create Virtual Display"))
                         .font(.body)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -39,7 +39,7 @@ struct VirtualDisplayView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .help("创建新的虚拟显示器")
+            .help(L("Yeni bir sanal ekran oluştur", "Create a new virtual display"))
 
             if let err = createError {
                 Text(err)
@@ -59,7 +59,7 @@ struct VirtualDisplayView: View {
                         if success {
                             showCreateForm = false
                         } else {
-                            createError = "虚拟显示器创建失败，请重试"
+                            createError = L("Sanal ekran oluşturulamadı, tekrar deneyin", "Couldn't create virtual display, please try again")
                             Task { @MainActor in
                                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                                 createError = nil
@@ -71,24 +71,24 @@ struct VirtualDisplayView: View {
                 .padding(.bottom, 8)
             }
         }
-        .alert("确认删除", isPresented: Binding(
+        .alert(L("Silmeyi Onayla", "Confirm Delete"), isPresented: Binding(
             get: { configToDelete != nil },
             set: { if !$0 { configToDelete = nil } }
         )) {
-            Button("删除", role: .destructive) {
+            Button(L("Sil", "Delete"), role: .destructive) {
                 if let id = configToDelete {
                     service.removeConfig(id: id)
                 }
                 configToDelete = nil
             }
-            Button("取消", role: .cancel) {
+            Button(L("İptal", "Cancel"), role: .cancel) {
                 configToDelete = nil
             }
         } message: {
             if let id = configToDelete, service.isActive(id) {
-                Text("此虚拟显示器当前处于活跃状态，删除后将立即停用。")
+                Text(L("Bu sanal ekran şu anda etkin. Silinirse hemen devre dışı kalır.", "This virtual display is currently active. Deleting it will disable it immediately."))
             } else {
-                Text("确认删除此虚拟显示器配置？")
+                Text(L("Bu sanal ekran yapılandırması silinsin mi?", "Delete this virtual display configuration?"))
             }
         }
     }
@@ -117,7 +117,7 @@ struct VirtualDisplayView: View {
 
             // Active / inactive badge
             if active {
-                Text("活跃")
+                Text(L("Etkin", "Active"))
                     .font(.caption2)
                     .foregroundColor(.white)
                     .padding(.horizontal, 5)
@@ -130,12 +130,12 @@ struct VirtualDisplayView: View {
             Button(action: {
                 configToDelete = config.id
             }) {
-                Label("删除", systemImage: "trash")
+                Label(L("Sil", "Delete"), systemImage: "trash")
                     .font(.caption)
                     .foregroundColor(.red)
             }
             .buttonStyle(.plain)
-            .help("删除此虚拟显示器")
+            .help(L("Bu sanal ekranı sil", "Delete this virtual display"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -147,7 +147,7 @@ struct VirtualDisplayView: View {
             Button(role: .destructive) {
                 configToDelete = config.id
             } label: {
-                Label("删除", systemImage: "trash")
+                Label(L("Sil", "Delete"), systemImage: "trash")
             }
         }
     }
@@ -160,7 +160,7 @@ struct CreateVirtualDisplayForm: View {
     @Binding var isCreating: Bool
     let onConfirm: (VirtualDisplayService.VirtualDisplayConfig) -> Void
 
-    @State private var name: String = "虚拟显示器"
+    @State private var name: String = L("Sanal Ekran", "Virtual Display")
     @State private var selectedPreset: Int = 0
     @State private var hiDPI: Bool = true
     @State private var autoCreate: Bool = true
@@ -175,21 +175,21 @@ struct CreateVirtualDisplayForm: View {
         VStack(alignment: .leading, spacing: 8) {
             // Name field
             HStack {
-                Text("名称")
+                Text(L("Ad", "Name"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .frame(width: 44, alignment: .leading)
-                TextField("显示器名称", text: $name)
+                    .frame(width: 70, alignment: .leading)
+                TextField(L("Ekran adı", "Display name"), text: $name)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
             }
 
             // Resolution preset picker
             HStack {
-                Text("分辨率")
+                Text(L("Çözünürlük", "Resolution"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .frame(width: 44, alignment: .leading)
+                    .frame(width: 70, alignment: .leading)
                 Picker("", selection: $selectedPreset) {
                     ForEach(presets.indices, id: \.self) { i in
                         Text(presets[i].label).tag(i)
@@ -198,7 +198,7 @@ struct CreateVirtualDisplayForm: View {
                 .pickerStyle(.menu)
                 .font(.caption)
                 .labelsHidden()
-                .help("选择虚拟显示器分辨率")
+                .help(L("Sanal ekran çözünürlüğünü seç", "Choose virtual display resolution"))
             }
 
             // HiDPI toggle
@@ -206,28 +206,28 @@ struct CreateVirtualDisplayForm: View {
                 Text("HiDPI")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .frame(width: 44, alignment: .leading)
+                    .frame(width: 70, alignment: .leading)
                 Toggle("", isOn: $hiDPI)
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .controlSize(.mini)
-                    .help("启用高分辨率模式（Retina）")
-                Text("启用高分辨率缩放")
+                    .help(L("Yüksek çözünürlük modunu etkinleştir (Retina)", "Enable high-resolution mode (Retina)"))
+                Text(L("Yüksek çözünürlüklü ölçekleme", "High-resolution scaling"))
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
 
             // Auto-create toggle
             HStack {
-                Text("自动")
+                Text(L("Otomatik", "Auto"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .frame(width: 44, alignment: .leading)
+                    .frame(width: 70, alignment: .leading)
                 Toggle("", isOn: $autoCreate)
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .controlSize(.mini)
-                Text("启动时自动创建")
+                Text(L("Açılışta otomatik oluştur", "Create automatically on launch"))
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -240,7 +240,7 @@ struct CreateVirtualDisplayForm: View {
                             .scaleEffect(0.7)
                             .frame(width: 14, height: 14)
                     }
-                    Text(isCreating ? "创建中..." : "创建")
+                    Text(isCreating ? L("Oluşturuluyor...", "Creating...") : L("Oluştur", "Create"))
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -255,7 +255,7 @@ struct CreateVirtualDisplayForm: View {
         guard !isCreating else { return }
         let preset = presets[selectedPreset]
         let config = VirtualDisplayService.VirtualDisplayConfig(
-            name: name.isEmpty ? "虚拟显示器" : name,
+            name: name.isEmpty ? L("Sanal Ekran", "Virtual Display") : name,
             width: preset.width,
             height: preset.height,
             refreshRate: 60,

@@ -81,7 +81,7 @@ struct SystemColorView: View {
             Button(action: vm.startSampling) {
                 HStack {
                     Image(systemName: vm.isSampling ? "eyedropper.halffull" : "eyedropper")
-                    Text(vm.isSampling ? "点击屏幕任意位置取色…" : "从屏幕取色")
+                    Text(vm.isSampling ? L("Renk almak için ekranda bir yere tıklayın…", "Click anywhere on screen to pick a color…") : L("Ekrandan Renk Seç", "Pick Color from Screen"))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -100,7 +100,7 @@ struct SystemColorView: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 6)
                 } label: {
-                    Text("颜色历史")
+                    Text(L("Renk Geçmişi", "Color History"))
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 12)
@@ -156,7 +156,7 @@ struct SystemColorMenuEntry: View {
             ExpandableRow(
                 icon: "eyedropper.halffull",
                 iconColor: .orange,
-                label: "系统颜色",
+                label: L("Sistem Rengi", "System Color"),
                 isExpanded: $isExpanded
             )
 

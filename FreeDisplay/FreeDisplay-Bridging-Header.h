@@ -60,9 +60,10 @@ typedef struct {
     uint32_t flags;        // bit 0x20000 = HiDPI
 } CGSDisplayMode;
 
-typedef int CGSConnectionID_t;
-extern CGError CGSConfigureDisplayMode(CGSConnectionID_t connection, CGDirectDisplayID display, uint32_t modeID);
-extern CGSConnectionID_t CGSMainConnectionID(void);
+// Real signature (CGSInternal/CGSDisplays.h): the first argument is the transaction from
+// CGBeginDisplayConfiguration, not a connection ID. Passing anything else makes CoreGraphics
+// dereference a bogus pointer.
+extern CGError CGSConfigureDisplayMode(CGDisplayConfigRef config, CGDirectDisplayID display, int modeNum);
 
 // MARK: - IOAVService Private API (Apple Silicon DDC)
 

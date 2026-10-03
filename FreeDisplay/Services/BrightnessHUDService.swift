@@ -54,11 +54,13 @@ final class BrightnessHUDService: @unchecked Sendable {
 
         let conn = NSXPCConnection(machServiceName: "com.apple.OSDUIHelper", options: [])
         conn.remoteObjectInterface = NSXPCInterface(with: OSDUIHelperProtocol.self)
-        conn.interruptionHandler = { NSLog("[BrightnessHUD] XPC connection interrupted") }
-        conn.invalidationHandler = { NSLog("[BrightnessHUD] XPC connection invalidated") }
+        // @Sendable: XPC calls these on its own queue, never the main thread.
+        conn.interruptionHandler = { @Sendable in NSLog("[BrightnessHUD] XPC connection interrupted") }
+        conn.invalidationHandler = { @Sendable in NSLog("[BrightnessHUD] XPC connection invalidated") }
         conn.resume()
 
-        let proxy = conn.remoteObjectProxyWithErrorHandler { error in
+        // @Sendable: XPC calls this on its own queue; an implicitly main-isolated closure would trap.
+        let proxy = conn.remoteObjectProxyWithErrorHandler { @Sendable error in
             NSLog("[BrightnessHUD] XPC error: %@", error.localizedDescription)
         }
 

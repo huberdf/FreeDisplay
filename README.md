@@ -4,7 +4,22 @@
 
 BetterDisplay is a great app, but its best features are locked behind a paid Pro license. FreeDisplay implements the most essential BetterDisplay features as a completely free, open-source macOS menu bar app.
 
-[Download Latest Release](https://github.com/huberdf/FreeDisplay/releases/latest) | [Report an Issue](https://github.com/huberdf/FreeDisplay/issues)
+[Download Latest Release](https://github.com/hakanotal/FreeDisplayTurkish/releases/latest) | [Report an Issue](https://github.com/hakanotal/FreeDisplayTurkish/issues)
+
+> 🇹🇷 **Turkish edition** — maintained by [@hakanotal](https://github.com/hakanotal).
+
+---
+
+## What's Changed in This Fork
+
+- **Turkish + English UI** — full Turkish translation; switch languages live in Settings → Dil / Language
+- **Night mode** — blue light filter that warms all displays, always on or on a daily schedule
+- **macOS 27 fixes** — menu no longer collapses to just the footer, and it shrinks back when sections collapse
+- **Crash fixes** — brightness/presets, color profiles, resolution fallback and display arrangement no longer crash the app
+- **Color profile** — shows the active profile (e.g. your monitor's own) instead of "Unknown", and updates live; only display-compatible profiles are listed (picking a CMYK/gray profile used to crash)
+- **Auto-restart** — with "Launch at login" on, FreeDisplay relaunches itself after a crash (Quit still quits)
+- **HiDPI** — asks for your password once per monitor instead of on every enable/disable
+- **Cleaner menu** — removed the built-in "Native Mode" / "HiDPI Mode" preset buttons; settings switches right-aligned
 
 ---
 
@@ -36,7 +51,11 @@ BetterDisplay is a great app, but its best features are locked behind a paid Pro
 
 ## Screenshots
 
-*Coming soon*
+<p align="center">
+  <img src="docs/Screenshot-1.png" alt="Main menu: display, presets, combined brightness and tools" width="260" align="top">
+  <img src="docs/Screenshot-2.png" alt="Display panel: brightness, HiDPI mode, display modes, color profile and image adjustments" width="260" align="top">
+  <img src="docs/Screenshot-3.png" alt="Tools expanded: auto brightness, night mode schedule and settings with the language switch" width="260" align="top">
+</p>
 
 ---
 
@@ -44,19 +63,22 @@ BetterDisplay is a great app, but its best features are locked behind a paid Pro
 
 ### Option 1: Download DMG
 
-1. Download `FreeDisplay.dmg` from [Releases](https://github.com/huberdf/FreeDisplay/releases/latest)
+1. Download the latest `FreeDisplay-<version>.dmg` from [Releases](https://github.com/hakanotal/FreeDisplayTurkish/releases/latest) (universal: Apple Silicon + Intel, macOS 14+)
 2. Open the DMG and drag **FreeDisplay.app** to **Applications**
-3. First launch: right-click → **Open** (unsigned app, one-time approval)
+3. First launch: the app isn't notarized, so macOS blocks it once. Open it, then go to **System Settings → Privacy & Security** and click **Open Anyway** — or run:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/FreeDisplay.app
+   ```
 
 ### Option 2: Build from Source
 
 ```bash
-brew install xcodegen
-git clone https://github.com/huberdf/FreeDisplay.git
-cd FreeDisplay
-xcodegen generate
-xcodebuild -scheme FreeDisplay -configuration Release build
+git clone https://github.com/hakanotal/FreeDisplayTurkish.git
+cd FreeDisplayTurkish
+./scripts/build-dmg.sh   # → build/FreeDisplay.app and build/FreeDisplay-<version>.dmg
 ```
+
+Xcode is optional: without it the script builds with the Command Line Tools (`xcode-select --install`). With Xcode you can also open `FreeDisplay.xcodeproj` (regenerate it with `xcodegen generate` after editing `project.yml`).
 
 ---
 
@@ -112,6 +134,13 @@ Issues and PRs welcome. This project uses:
 - `xcodegen` for project generation (edit `project.yml`, not `.xcodeproj`)
 - Swift 6 with `SWIFT_STRICT_CONCURRENCY: minimal`
 - MVVM architecture (View → ViewModel → Service)
+
+---
+
+## Contributors
+
+- [@huberdf](https://github.com/huberdf) — original author
+- [@hakanotal](https://github.com/hakanotal) — Turkish translation (Türkçe çeviri)
 
 ---
 

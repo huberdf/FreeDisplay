@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Expandable "图像调整" section — 11 sliders for software gamma/image adjustments.
+/// Expandable "Image Adjustments" section — 11 sliders for software gamma/image adjustments.
 /// Mirrors BetterDisplay's Image Adjustment panel.
 struct ImageAdjustmentView: View {
     @ObservedObject var display: DisplayInfo
@@ -24,10 +24,10 @@ struct ImageAdjustmentView: View {
         VStack(alignment: .leading, spacing: 0) {
 
             // ── Group 1: Global adjustments ────────────────────────────────
-            adjustRow(icon: "circle.righthalf.filled",   label: "对比度",  value: $contrast).help("调整 对比度")
-            adjustRow(icon: "sparkle",                   label: "伽马值",  value: $gammaVal).help("调整 伽马值")
-            adjustRow(icon: "bolt.fill",                 label: "增益",    value: $gain).help("调整 增益")
-            adjustRow(icon: "thermometer.medium",        label: "色温",    value: $colorTemperature).help("调整 色温")
+            adjustRow(icon: "circle.righthalf.filled",   label: L("Kontrast", "Contrast"),  value: $contrast).help(L("Kontrastı ayarla", "Adjust contrast"))
+            adjustRow(icon: "sparkle",                   label: L("Gama", "Gamma"),  value: $gammaVal).help(L("Gamayı ayarla", "Adjust gamma"))
+            adjustRow(icon: "bolt.fill",                 label: L("Kazanç", "Gain"),    value: $gain).help(L("Kazancı ayarla", "Adjust gain"))
+            adjustRow(icon: "thermometer.medium",        label: L("Sıcaklık", "Temperature"),    value: $colorTemperature).help(L("Renk sıcaklığını ayarla", "Adjust color temperature"))
             quantizationRow
 
             Divider()
@@ -35,18 +35,18 @@ struct ImageAdjustmentView: View {
                 .padding(.vertical, 2)
 
             // ── Group 2: Per-channel gamma ─────────────────────────────────
-            adjustRow(icon: "r.circle",      label: "伽马值 R",  value: $rGamma, accent: .red).help("调整 红色伽马值")
-            adjustRow(icon: "g.circle",      label: "伽马值 G",  value: $gGamma, accent: .green).help("调整 绿色伽马值")
-            adjustRow(icon: "b.circle",      label: "伽马值 B",  value: $bGamma, accent: .blue).help("调整 蓝色伽马值")
+            adjustRow(icon: "r.circle",      label: L("Gama R", "Gamma R"),  value: $rGamma, accent: .red).help(L("Kırmızı gamayı ayarla", "Adjust red gamma"))
+            adjustRow(icon: "g.circle",      label: L("Gama G", "Gamma G"),  value: $gGamma, accent: .green).help(L("Yeşil gamayı ayarla", "Adjust green gamma"))
+            adjustRow(icon: "b.circle",      label: L("Gama B", "Gamma B"),  value: $bGamma, accent: .blue).help(L("Mavi gamayı ayarla", "Adjust blue gamma"))
 
             Divider()
                 .padding(.horizontal, 12)
                 .padding(.vertical, 2)
 
             // ── Group 3: Per-channel gain ──────────────────────────────────
-            adjustRow(icon: "r.circle.fill", label: "增益 R",    value: $rGain,  accent: .red).help("调整 红色增益")
-            adjustRow(icon: "g.circle.fill", label: "增益 G",    value: $gGain,  accent: .green).help("调整 绿色增益")
-            adjustRow(icon: "b.circle.fill", label: "增益 B",    value: $bGain,  accent: .blue).help("调整 蓝色增益")
+            adjustRow(icon: "r.circle.fill", label: L("Kazanç R", "Gain R"),    value: $rGain,  accent: .red).help(L("Kırmızı kazancı ayarla", "Adjust red gain"))
+            adjustRow(icon: "g.circle.fill", label: L("Kazanç G", "Gain G"),    value: $gGain,  accent: .green).help(L("Yeşil kazancı ayarla", "Adjust green gain"))
+            adjustRow(icon: "b.circle.fill", label: L("Kazanç B", "Gain B"),    value: $bGain,  accent: .blue).help(L("Mavi kazancı ayarla", "Adjust blue gain"))
 
             Divider()
                 .padding(.horizontal, 12)
@@ -57,7 +57,7 @@ struct ImageAdjustmentView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(.yellow)
                     .font(.caption)
-                Text("调整可能影响 HDR 内容！")
+                Text(L("Ayarlar HDR içeriği etkileyebilir!", "Adjustments may affect HDR content!"))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -67,17 +67,17 @@ struct ImageAdjustmentView: View {
             // ── Action buttons ─────────────────────────────────────────────
             HStack(spacing: 8) {
                 actionButton(
-                    title: "反转色彩",
+                    title: L("Ters Çevir", "Invert"),
                     systemImage: "circle.lefthalf.filled",
                     isActive: isInverted
                 ) {
                     isInverted.toggle()
                     commitAdjustment()
                 }
-                .help("反转显示器色彩（类似夜间模式）")
+                .help(L("Ekran renklerini ters çevir (gece moduna benzer)", "Invert display colors (similar to night mode)"))
 
                 actionButton(
-                    title: isPaused ? "继续调整" : "暂停调整",
+                    title: isPaused ? L("Devam Et", "Resume") : L("Duraklat", "Pause"),
                     systemImage: isPaused ? "play.circle" : "pause.circle",
                     isActive: isPaused
                 ) {
@@ -88,16 +88,16 @@ struct ImageAdjustmentView: View {
                         commitAdjustment()
                     }
                 }
-                .help("暂时停用色彩调整，恢复原始显示")
+                .help(L("Renk ayarlarını geçici olarak devre dışı bırak, orijinal görüntüye dön", "Temporarily disable color adjustments and restore the original image"))
 
                 actionButton(
-                    title: "重置全部",
+                    title: L("Tümünü Sıfırla", "Reset All"),
                     systemImage: "arrow.counterclockwise",
                     isActive: false
                 ) {
                     resetAll()
                 }
-                .help("重置所有色彩调整为默认值")
+                .help(L("Tüm renk ayarlarını varsayılana sıfırla", "Reset all color adjustments to defaults"))
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
@@ -161,14 +161,14 @@ struct ImageAdjustmentView: View {
                 .frame(width: 18)
                 .font(.caption)
 
-            Text("量化")
+            Text(L("Niceleme", "Quantization"))
                 .font(.caption)
                 .frame(width: 72, alignment: .leading)
 
             Slider(value: $quantLevels, in: 2...256, step: 1) { _ in
                 commitAdjustment()
             }
-            .help("调整 量化级别")
+            .help(L("Niceleme düzeyini ayarla", "Adjust quantization level"))
 
             Text(quantLevels >= 255 ? "∞" : "\(Int(quantLevels))")
                 .font(.caption)

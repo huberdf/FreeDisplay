@@ -20,12 +20,8 @@ class ArrangementService {
             guard CGBeginDisplayConfiguration(&config) == .success,
                   let cfg = config else { return false }
             CGConfigureDisplayOrigin(cfg, displayID, Int32(x), Int32(y))
-            let result = CGCompleteDisplayConfiguration(cfg, .forSession)
-            if result != .success {
-                CGCancelDisplayConfiguration(cfg)
-                return false
-            }
-            return true
+            // On return the configuration is no longer valid (even on failure) — don't cancel it.
+            return CGCompleteDisplayConfiguration(cfg, .forSession) == .success
         }
     }
 
@@ -58,12 +54,8 @@ class ArrangementService {
             // Move old main to where the target was.
             CGConfigureDisplayOrigin(cfg, currentMainID, targetOriginX, targetOriginY)
 
-            let result = CGCompleteDisplayConfiguration(cfg, .forSession)
-            if result != .success {
-                CGCancelDisplayConfiguration(cfg)
-                return false
-            }
-            return true
+            // On return the configuration is no longer valid (even on failure) — don't cancel it.
+            return CGCompleteDisplayConfiguration(cfg, .forSession) == .success
         }
     }
 }

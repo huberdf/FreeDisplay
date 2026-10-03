@@ -5,6 +5,9 @@ import AppKit
 
 @MainActor
 class DisplayInfo: ObservableObject, Identifiable {
+    /// Localized name for the built-in panel (re-applied after an in-app language switch).
+    static var builtinDisplayName: String { L("Dahili Ekran", "Built-in Display") }
+
     nonisolated var id: CGDirectDisplayID { displayID }
     let displayID: CGDirectDisplayID
     @Published var name: String
@@ -64,9 +67,9 @@ class DisplayInfo: ObservableObject, Identifiable {
         self.serialNumber = CGDisplaySerialNumber(displayID)
 
         if builtin {
-            self.name = "内建显示屏"
+            self.name = Self.builtinDisplayName
         } else {
-            self.name = NSScreen.screen(for: displayID)?.localizedName ?? "Display \(displayID)"
+            self.name = NSScreen.screen(for: displayID)?.localizedName ?? L("Ekran \(displayID)", "Display \(displayID)")
         }
 
     }

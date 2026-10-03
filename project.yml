@@ -16,16 +16,17 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.freedisplay.app
+        MARKETING_VERSION: "2.1"
+        CURRENT_PROJECT_VERSION: "3"
         INFOPLIST_KEY_LSUIElement: true
-        INFOPLIST_KEY_NSHumanReadableCopyright: "FreeDisplay - Free & Open Source"
+        INFOPLIST_KEY_NSHumanReadableCopyright: "FreeDisplay - Ücretsiz ve Açık Kaynak"
         SWIFT_VERSION: "6.0"
         CODE_SIGN_ENTITLEMENTS: FreeDisplay/FreeDisplay.entitlements
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGNING_REQUIRED: YES
-        CODE_SIGN_IDENTITY: "Apple Development"
-        DEVELOPMENT_TEAM: 29W56PHWJR
+        CODE_SIGN_IDENTITY: "-"
         SWIFT_STRICT_CONCURRENCY: minimal
         SWIFT_OBJC_BRIDGING_HEADER: FreeDisplay/FreeDisplay-Bridging-Header.h
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSScreenCaptureUsageDescription: "FreeDisplay 需要屏幕录制权限以显示各显示器的实时画面预览。"
+        INFOPLIST_KEY_NSScreenCaptureUsageDescription: "FreeDisplay, ekranların canlı önizlemesini göstermek için ekran kaydı iznine ihtiyaç duyar."
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import Combine
+import Observation
 
 /// Centralized settings persistence service.
 /// Simple settings use UserDefaults via @AppStorage-compatible keys.
@@ -138,4 +139,46 @@ final class SettingsService: ObservableObject, @unchecked Sendable {
             ? defaults.bool(forKey: Keys.checkUpdatesOnLaunch) : true
         colorPickerHistory = defaults.stringArray(forKey: Keys.colorPickerHistory) ?? []
     }
+}
+
+// MARK: - App Language
+
+/// UI languages the app can switch between at runtime (Settings → Dil / Language).
+enum AppLanguage: String, CaseIterable, Sendable {
+    case tr, en
+}
+
+/// Holds the in-app UI language, persisted under `fd.language` (default: Turkish).
+/// Hand-written `Observable` conformance (no macro needed): any view body that calls
+/// `L(_:_:)` reads `language` and therefore re-renders immediately when it changes.
+final class LanguageStore: Observable, @unchecked Sendable {
+    static let shared = LanguageStore()
+
+    private static let key = "fd.language"
+    private let registrar = ObservationRegistrar()
+    private let lock = NSLock()
+    private var storedLanguage: AppLanguage
+
+    private init() {
+        let saved = UserDefaults.standard.string(forKey: Self.key) ?? ""
+        storedLanguage = AppLanguage(rawValue: saved) ?? .tr
+    }
+
+    var language: AppLanguage {
+        get {
+            registrar.access(self, keyPath: \.language)
+            return lock.withLock { storedLanguage }
+        }
+        set {
+            registrar.withMutation(of: self, keyPath: \.language) {
+                lock.withLock { storedLanguage = newValue }
+            }
+            UserDefaults.standard.set(newValue.rawValue, forKey: Self.key)
+        }
+    }
+}
+
+/// Returns the UI string for the current in-app language: `L("Ayarlar", "Settings")`.
+func L(_ tr: String, _ en: String) -> String {
+    LanguageStore.shared.language == .en ? en : tr
 }

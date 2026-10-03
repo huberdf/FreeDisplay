@@ -340,15 +340,15 @@ final class BrightnessService: @unchecked Sendable {
     /// Uses a linear ramp from 0 to `factor` so white level is dimmed while black stays black.
     /// brightness: 0–100 (percentage); never goes fully to 0 to avoid a completely black screen.
     ///
-    /// If GammaService has an active adjustment for this display, it delegates to GammaService
-    /// so the two do not overwrite each other's CGSetDisplayTransfer* call.
+    /// If GammaService owns this display's transfer function (active adjustment or night mode),
+    /// it delegates to GammaService so the two do not overwrite each other's CGSetDisplayTransfer* call.
     func setSoftwareBrightness(_ brightness: Double, for displayID: CGDirectDisplayID) {
         let factor = max(0.05, brightness / 100.0)
         softwareBrightnessLock.withLock { softwareBrightnessFactors[displayID] = factor }
         saveSoftwareBrightness(factor: factor, for: displayID)
 
-        // If GammaService has an active adjustment, let it re-apply (it will incorporate the factor).
-        if GammaService.shared.hasActiveAdjustment(for: displayID) {
+        // If GammaService owns the transfer function, let it re-apply (it will incorporate the factor).
+        if GammaService.shared.ownsTransfer(for: displayID) {
             GammaService.shared.reapply(for: displayID)
             return
         }

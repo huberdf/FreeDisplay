@@ -223,15 +223,21 @@ final class ResolutionService: @unchecked Sendable {
     // MARK: - CGSConfigureDisplayMode fallback (private API)
 
     /// Applies a mode by its raw modeID using the CGS private API.
-    /// CGSConfigureDisplayMode(connection, displayID, modeID) bypasses some of the
+    /// CGSConfigureDisplayMode(config, displayID, modeNum) bypasses some of the
     /// restrictions that CGConfigureDisplayWithDisplayMode has on certain display configs.
-    /// Does NOT wrap in a CGBeginDisplayConfiguration transaction — CGSConfigureDisplayMode
-    /// manages its own transaction internally; an empty outer transaction would always succeed
-    /// regardless of whether the mode change actually took effect.
+    /// It must run inside a CGBeginDisplayConfiguration transaction. Completing the
+    /// transaction can succeed without the mode actually changing, so success is verified
+    /// by reading the active mode back.
     private func cgsFallback(modeID: UInt32, on displayID: CGDirectDisplayID) async -> Bool {
         return await Task.detached(priority: .userInitiated) {
-            let connection = CGSMainConnectionID()
-            CGSConfigureDisplayMode(connection, displayID, modeID)
+            var config: CGDisplayConfigRef?
+            guard CGBeginDisplayConfiguration(&config) == .success, let cfg = config else { return false }
+            guard CGSConfigureDisplayMode(cfg, displayID, Int32(bitPattern: modeID)) == .success else {
+                CGCancelDisplayConfiguration(cfg)
+                return false
+            }
+            // On return the configuration is no longer valid, whether or not it succeeded.
+            _ = CGCompleteDisplayConfiguration(cfg, .forSession)
 
             // Wait for the mode change to propagate before reading back
             try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms

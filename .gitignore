@@ -4,3 +4,8 @@ build/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 DerivedData/
 .build/
+
+# Release artifacts (published on GitHub Releases, not committed)
+*.dmg
+*.dmg.sha256
+*.xcarchive

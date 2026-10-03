@@ -11,7 +11,7 @@ private func brightnessKeyEventCallback(
     event: CGEvent,
     userInfo: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
-    guard let userInfo else { return Unmanaged.passRetained(event) }
+    guard let userInfo else { return Unmanaged.passUnretained(event) }
     let service = Unmanaged<BrightnessKeyService>.fromOpaque(userInfo).takeUnretainedValue()
     return service.handleEventFromCallback(type: type, event: event)
 }
@@ -154,17 +154,17 @@ final class BrightnessKeyService: @unchecked Sendable {
                     CGEvent.tapEnable(tap: tap, enable: true)
                 }
             }
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         guard type.rawValue == Self.cgEventTypeSystemDefinedRaw else {
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         // Convert to NSEvent to inspect media-key subtype.
-        guard let nsEvent = NSEvent(cgEvent: event) else { return Unmanaged.passRetained(event) }
+        guard let nsEvent = NSEvent(cgEvent: event) else { return Unmanaged.passUnretained(event) }
         guard nsEvent.subtype.rawValue == Self.nxSubtypeAuxControlButtons else {
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         let data1 = nsEvent.data1
@@ -173,11 +173,11 @@ final class BrightnessKeyService: @unchecked Sendable {
 
         // Only intercept brightness keys.
         guard keyCode == Self.nxKeytypeBrightnessUp || keyCode == Self.nxKeytypeBrightnessDown else {
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         // For key-up events always pass through — only consume key-down on external displays.
-        guard isKeyDown else { return Unmanaged.passRetained(event) }
+        guard isKeyDown else { return Unmanaged.passUnretained(event) }
 
         // Determine which display is under the cursor.
         // NSEvent.mouseLocation and NSScreen.screens are safe to call on the main thread.
@@ -186,13 +186,13 @@ final class BrightnessKeyService: @unchecked Sendable {
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }),
               let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         else {
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         let isBuiltin = CGDisplayIsBuiltin(screenNumber) != 0
         if isBuiltin {
             // Cursor on built-in display — let macOS handle it normally.
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         // Cursor is on an external display — schedule brightness adjustment and consume.

@@ -48,5 +48,7 @@ struct FreeDisplayApp: App {
             Image(systemName: "display")
         }
         .menuBarExtraStyle(.window)
+        // Let the panel shrink back when sections collapse (min-only sizing never shrinks).
+        .windowResizability(.contentSize)
     }
 }

@@ -8,18 +8,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var onWake: (() -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 防止重复启动：如果已有实例在运行，直接退出
-        let runningApps = NSWorkspace.shared.runningApplications.filter {
-            $0.bundleIdentifier == Bundle.main.bundleIdentifier
+        // Prevent duplicate launches: exit if another instance is already running
+        let otherInstances = NSWorkspace.shared.runningApplications.filter {
+            $0.bundleIdentifier == Bundle.main.bundleIdentifier &&
+            $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
         }
-        if runningApps.count > 1 {
-            print("[FreeDisplay] Another instance is already running, exiting.")
-            NSApp.terminate(nil)
-            return
+        if !otherInstances.isEmpty {
+            if LaunchService.isManagedLaunch {
+                // Started by the launchd agent (login / crash restart / hand-over): replace the
+                // manually opened copy so the supervised instance is the one that keeps running.
+                otherInstances.forEach { $0.terminate() }
+            } else {
+                print("[FreeDisplay] Another instance is already running, exiting.")
+                NSApp.terminate(nil)
+                return
+            }
         }
+
+        // Migrate the old login item / hand a manual launch over to the launchd agent.
+        LaunchService.shared.prepareAtLaunch()
+        SettingsService.shared.launchAtLogin = LaunchService.shared.isEnabled
 
         // Start intercepting brightness keys to route them to the display under the cursor.
         BrightnessKeyService.shared.start()
+
+        // Apply the saved night mode state and start following its schedule.
+        NightModeService.shared.start()
 
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,

@@ -73,12 +73,17 @@ final class HiDPIService: @unchecked Sendable {
         }
     }
 
+    /// True until the one-time permission step has made this vendor's override folder
+    /// writable by the current user (after that, enable/disable needs no password).
+    func requiresAdmin(vendor: UInt32) -> Bool {
+        !FileManager.default.isWritableFile(atPath: overrideDir(vendor: vendor).path)
+    }
+
     // MARK: - Plist Override
 
     private func enableHiDPIPlist(vendor: UInt32, product: UInt32,
                                    nativeWidth: Int, nativeHeight: Int) -> String? {
-        let dirPath = overrideDir(vendor: vendor).path
-        let plistPath = overridePlistURL(vendor: vendor, product: product).path
+        let plistURL = overridePlistURL(vendor: vendor, product: product)
 
         let scaledModes = generateScaledModes(nativeWidth: nativeWidth, nativeHeight: nativeHeight)
         let plist: [String: Any] = [
@@ -86,24 +91,17 @@ final class HiDPIService: @unchecked Sendable {
         ]
 
         guard let data = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) else {
-            return "生成 Plist 数据失败"
+            return L("Plist verisi oluşturulamadı", "Failed to generate plist data")
         }
 
-        // Write to a temp file first, then use privileged helper to move it
-        let tmpPath = NSTemporaryDirectory() + "fd_hidpi_override.plist"
-        do {
-            try data.write(to: URL(fileURLWithPath: tmpPath), options: .atomic)
-        } catch {
-            return "写入临时文件失败：\(error.localizedDescription)"
-        }
-
-        // Use AppleScript to get admin privileges for writing to /Library/Displays/
-        if let err = executePrivilegedCommand("mkdir -p '\(dirPath)' && cp '\(tmpPath)' '\(plistPath)'") {
+        if let err = ensureWritableOverrideDir(vendor: vendor) {
             return err
         }
-
-        // Clean up temp file
-        try? FileManager.default.removeItem(atPath: tmpPath)
+        do {
+            try data.write(to: plistURL, options: .atomic)
+        } catch {
+            return L("Ayar dosyası yazılamadı: \(error.localizedDescription)", "Failed to write override file: \(error.localizedDescription)")
+        }
 
         // Attempt to trigger display mode re-enumeration via IOServiceRequestProbe
         triggerDisplayReenumeration(vendor: vendor, product: product)
@@ -112,16 +110,31 @@ final class HiDPIService: @unchecked Sendable {
     }
 
     private func disableHiDPIPlist(vendor: UInt32, product: UInt32) -> String? {
-        let plistPath = overridePlistURL(vendor: vendor, product: product).path
-        guard FileManager.default.fileExists(atPath: plistPath) else { return nil }
+        let plistURL = overridePlistURL(vendor: vendor, product: product)
+        guard FileManager.default.fileExists(atPath: plistURL.path) else { return nil }
 
-        if let err = executePrivilegedCommand("rm -f '\(plistPath)'") {
+        if let err = ensureWritableOverrideDir(vendor: vendor) {
             return err
+        }
+        do {
+            try FileManager.default.removeItem(at: plistURL)
+        } catch {
+            return L("Ayar dosyası silinemedi: \(error.localizedDescription)", "Failed to remove override file: \(error.localizedDescription)")
         }
         return nil
     }
 
     // MARK: - Helpers
+
+    /// One-time permission step: /Library/Displays is root-owned, so the first enable/disable
+    /// asks for an admin password to create this vendor's override folder and hand it to the
+    /// current user. Later writes go straight to the folder without a prompt.
+    /// Trade-off: other processes running as this user can also edit this vendor's overrides.
+    private func ensureWritableOverrideDir(vendor: UInt32) -> String? {
+        guard requiresAdmin(vendor: vendor) else { return nil }
+        let dirPath = overrideDir(vendor: vendor).path
+        return executePrivilegedCommand("mkdir -p '\(dirPath)' && chown -R \(getuid()) '\(dirPath)'")
+    }
 
     /// Executes a shell command with administrator privileges via AppleScript.
     /// Returns nil on success, or an error message on failure.
@@ -131,15 +144,15 @@ final class HiDPIService: @unchecked Sendable {
             """
         var error: NSDictionary?
         guard let appleScript = NSAppleScript(source: script) else {
-            return "创建 AppleScript 失败"
+            return L("AppleScript oluşturulamadı", "Failed to create AppleScript")
         }
         appleScript.executeAndReturnError(&error)
         if let error = error {
-            let msg = error[NSAppleScript.errorMessage] as? String ?? "未知错误"
+            let msg = error[NSAppleScript.errorMessage] as? String ?? L("Bilinmeyen hata", "Unknown error")
             if msg.contains("canceled") || msg.contains("Cancel") {
-                return "用户取消了授权"
+                return L("Yetkilendirme kullanıcı tarafından iptal edildi", "Authorization was canceled by the user")
             }
-            return "管理员授权失败：\(msg)"
+            return L("Yönetici yetkilendirmesi başarısız: \(msg)", "Administrator authorization failed: \(msg)")
         }
         return nil
     }

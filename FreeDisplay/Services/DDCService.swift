@@ -247,6 +247,10 @@ final class DDCService: ObservableObject, @unchecked Sendable {
                 // Retain io_service_t so we can walk its parent chain in buildAVServiceMap
                 IOObjectRetain(service)
                 workingPairs.append((service: avService, ioEntry: service))
+            } else {
+                // IOAVServiceCreateWithService follows the Create rule; an unusable service
+                // isn't stored anywhere, so release it instead of leaking one per probe.
+                Unmanaged<AnyObject>.fromOpaque(UnsafeRawPointer(avService)).release()
             }
             IOObjectRelease(service)
             service = IOIteratorNext(iterator)
@@ -619,11 +623,13 @@ final class DDCService: ObservableObject, @unchecked Sendable {
 
     /// Asynchronously write a VCP value, retrying up to 3 times.
     /// Invalidates the cache for the written VCP code on success.
+    /// `completion` runs on the DDC queue. It is `@Sendable` so callers on the main actor
+    /// don't get an implicitly main-isolated closure (Swift 6 traps when that runs off-main).
     func writeAsync(
         displayID: CGDirectDisplayID,
         command: UInt8,
         value: UInt16,
-        completion: ((Bool) -> Void)? = nil
+        completion: (@Sendable (Bool) -> Void)? = nil
     ) {
         ddcQueue.async {
             for attempt in 0..<3 {
@@ -643,10 +649,11 @@ final class DDCService: ObservableObject, @unchecked Sendable {
 
     /// Asynchronously read a VCP value.
     /// Returns a cached result if available and not expired (5-second TTL).
+    /// `completion` runs on the DDC queue (or synchronously on a cache hit); see `writeAsync`.
     func readAsync(
         displayID: CGDirectDisplayID,
         command: UInt8,
-        completion: @escaping ((current: UInt16, max: UInt16)?) -> Void
+        completion: @escaping @Sendable ((current: UInt16, max: UInt16)?) -> Void
     ) {
         // Fast path: return cached value if still fresh
         cacheLock.lock()
