@@ -284,17 +284,7 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // 开机自启动
-            Toggle(isOn: Binding(
-                get: { settings.launchAtLogin },
-                set: { newValue in
-                    if newValue {
-                        LaunchService.shared.enable()
-                    } else {
-                        LaunchService.shared.disable()
-                    }
-                    settings.launchAtLogin = newValue
-                }
-            )) {
+            Toggle(isOn: $settings.launchAtLogin) {
                 HStack(spacing: 6) {
                     MenuItemIcon(systemName: "power", color: .green)
                         .accessibilityHidden(true)

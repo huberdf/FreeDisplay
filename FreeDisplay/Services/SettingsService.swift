@@ -39,7 +39,16 @@ final class SettingsService: ObservableObject, @unchecked Sendable {
     // MARK: - Published Settings
 
     @Published var launchAtLogin: Bool = false {
-        didSet { defaults.set(launchAtLogin, forKey: Keys.launchAtLogin) }
+        didSet {
+            defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
+            if launchAtLogin != LaunchService.shared.isEnabled {
+                if launchAtLogin {
+                    LaunchService.shared.enable()
+                } else {
+                    LaunchService.shared.disable()
+                }
+            }
+        }
     }
 
     /// Whether the first-launch "enable Launch at Login?" prompt has been shown.
